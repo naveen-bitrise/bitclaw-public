@@ -1,0 +1,14 @@
+# .gitignore does NOT apply to docker builds — without this file, `COPY . .`
+# would bake local secrets (.env, .mcp.json), the SQLite database, and the
+# virtualenv into the image. Keep this in sync with .gitignore.
+.env
+.mcp.json
+*.db
+*.db-wal
+*.db-shm
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+.git/
+tests/

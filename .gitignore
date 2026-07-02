@@ -1,0 +1,14 @@
+# Credentials — only the .example templates are committed.
+.env
+.mcp.json
+
+# SQLite database (+ WAL sidecar files).
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
