@@ -47,6 +47,13 @@ COPY --chown=app:app pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY --chown=app:app . .
 RUN uv sync --frozen --no-dev
+# Bake the example MCP config in as the default, so the prebuilt image runs
+# with zero mounted files: it contains only $VAR references (no secrets),
+# resolved from the environment at runtime — servers whose vars are unset are
+# simply disabled (that's how the capability tiers work). Mount your own file
+# at /app/.mcp.json to override. (.mcp.json itself is dockerignored, so a
+# local secret-bearing copy can never end up in the image.)
+RUN cp .mcp.json.example .mcp.json
 
 EXPOSE 8080
 CMD ["uv", "run", "python", "main.py"]

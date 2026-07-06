@@ -548,6 +548,53 @@ async def _fire_past_due_rows(gateway, slack_client, rows: list[dict]) -> None:
     logger.info("Past-due scheduled-message recovery complete (%d row(s))", len(rows))
 
 
+def _log_capability_summary() -> None:
+    """One glance at what this deployment can do, logged at startup.
+
+    bitclaw's integrations are tiered: Slack + an Anthropic key alone gives a
+    conversational bot; the Bitrise RDE integration gives it hands (coding);
+    GitHub adds PR orchestration; Jira is optional on top. Each tier is
+    enabled purely by setting its env vars, so this summary — not a crash —
+    is how an operator learns what's missing. The coding tier gets a WARNING
+    when absent: a bitclaw that can only talk is missing its point.
+    """
+    def have(*names: str) -> bool:
+        return all(os.environ.get(n) for n in names)
+
+    lines = ["capability summary:"]
+    lines.append("  chat            ✓  Slack + Claude")
+    rde_vars = ("BITRISE_TOKEN", "BITRISE_WORKSPACE_ID", "RDE_TEMPLATE_ID")
+    coding = have(*rde_vars)
+    if coding:
+        lines.append("  coding (RDE)    ✓  Bitrise Remote Dev Environments")
+    else:
+        missing = ", ".join(n for n in rde_vars if not os.environ.get(n))
+        lines.append(
+            f"  coding (RDE)    ✗  set {missing} (see docs/rde-template.md) — "
+            "without this, bitclaw can only talk; the coding agent is the "
+            "point of this bot"
+        )
+    if have("GITHUB_TOKEN"):
+        gh = "  github          ✓  PR orchestration"
+        if not os.environ.get("GITHUB_ALLOWED_ORG"):
+            gh += " (GITHUB_ALLOWED_ORG unset — every author-trust check fails closed)"
+        if not os.environ.get("GITHUB_WEBHOOK_SECRET"):
+            gh += " (GITHUB_WEBHOOK_SECRET unset — inbound PR/CI webhooks disabled)"
+        lines.append(gh)
+    else:
+        lines.append(
+            "  github          ✗  set GITHUB_TOKEN + GITHUB_ALLOWED_ORG to "
+            "open and shepherd PRs"
+        )
+    if have("JIRA_AUTH", "JIRA_HOST"):
+        lines.append("  jira            ✓")
+    else:
+        lines.append("  jira            ✗  optional (JIRA_AUTH + JIRA_HOST)")
+
+    log = logger.info if coding else logger.warning
+    log("%s", "\n".join(lines))
+
+
 def _make_webhook_runner(web_app: web.Application) -> web.AppRunner:
     """Build the webhook server's AppRunner with access logging OFF.
 
@@ -575,6 +622,8 @@ async def _start_webhook_server(slack_client, github_bot_login: str | None) -> w
 
 async def main():
     global _bot_user_id, _bot_id, _github_bot_login
+
+    _log_capability_summary()
 
     # Open the database before anything can touch it (session restore and
     # scheduled-message recovery below both hit it).

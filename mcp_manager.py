@@ -93,8 +93,14 @@ def load_external_mcp_servers() -> dict[str, dict]:
             # Skip the WHOLE server, loudly. Partially resolving (or passing
             # an empty string) would let the server start and then fail auth
             # in ways that are much harder to trace back to a missing var.
-            logger.error(
-                "Skipping MCP server %r — required env var(s) missing: %s",
+            # This is also how the capability tiers work: integrations are
+            # enabled by setting their env vars, so an unset var means "this
+            # deployment runs without that integration" (main.py prints the
+            # capability summary), not necessarily a mistake.
+            logger.warning(
+                "MCP server %r disabled — env var(s) not set: %s "
+                "(set them to enable this integration; see the README's "
+                "capability tiers)",
                 name, ", ".join(sorted(set(missing))),
             )
             continue

@@ -151,43 +151,110 @@ later": one conversation with full history beats a second agent with none).
 
 ---
 
-## Quickstart
+## Quickstart — three steps, each with its own payoff
 
-### Prerequisites
+bitclaw's integrations are **tiered**: every tier is enabled purely by
+setting its environment variables. The bot prints a capability summary at
+startup and, when you ask it for something its current tier can't do, tells
+you in Slack exactly what's missing. So you can climb one step at a time —
+but to be clear, **step 2 is the destination**: a bitclaw that can only talk
+is a demo; a bitclaw with a coding agent behind it is the thing this repo
+exists to show.
 
-- **Python 3.11+** and [uv](https://docs.astral.sh/uv/).
-- **A Slack app** created from the included
-  [`slack-app-manifest.json`](slack-app-manifest.json) (Socket Mode and
-  Interactivity are enabled in the manifest — Interactivity is what makes the
-  egress Approve/Reject buttons deliver). Generate an app-level token with
-  `connections:write`, install the app, and grab the bot token.
-- **An Anthropic API key** (or be logged into the `claude` CLI on the host).
-- **A GitHub personal access token** with `repo` + `read:org` scope, and the
-  name of the GitHub org whose members you trust (`GITHUB_ALLOWED_ORG`).
-- **Webhook exposure**: GitHub (and optionally Jira) must reach
-  `http://<host>:8080` — for local development a tunnel such as `ngrok http
-  8080` works. Point an org or repo webhook at `/webhooks/github`
-  (content type JSON, an HMAC secret you generate, events: pull requests,
-  issue comments, PR reviews and review comments, check runs, workflow runs).
-- **A Bitrise workspace with RDE access** (RDE is in beta — [contact
-  Bitrise](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview)
-  if your workspace doesn't have it), a [personal access
-  token](https://app.bitrise.io/me/account/security), and the coding-agent
-  template — build it once following
-  [docs/rde-template.md](docs/rde-template.md) and put its id in
-  `RDE_TEMPLATE_ID`.
-- **Optional: Jira** — an API token for the hosted Atlassian MCP server, plus
-  a webhook (assignment bootstrap, comments, transitions).
+| Step | You configure | You get |
+|---|---|---|
+| **1. Chat** | Slack app + Anthropic API key | @mention the bot, it answers 🎉 |
+| **2. Give it hands** — *the point of this repo* | Bitrise RDE: token, workspace, coding-agent template | it clones repos, writes code, pushes branches 🎉 |
+| **3. Let it ship** | GitHub token + trusted org (+ a webhook) | it opens PRs, routes reviews/CI back to Slack, merges on your go-ahead 🎉 |
+| *Optional: Jira* | Atlassian token + webhook | assigned tickets bootstrap threads; comments/transitions route back |
 
-### Setup
+### Step 1 — a talking bot
+
+1. Create a Slack app from the included
+   [`slack-app-manifest.json`](slack-app-manifest.json) (Socket Mode and
+   Interactivity are pre-enabled in it), install it to your workspace, grab
+   the bot token (`xoxb-…`), and generate an app-level token (`xapp-…`) with
+   `connections:write`.
+2. Run the prebuilt image — one command, the required vars are right there
+   to fill in:
+
+```bash
+docker run -it --rm \
+  -v bitclaw-data:/data -v bitclaw-claude:/home/app/.claude \
+  -e DB_PATH=/data/bitclaw.db \
+  -p 8080:8080 \
+  -e SLACK_BOT_TOKEN=xoxb-your-bot-token \
+  -e SLACK_APP_TOKEN=xapp-your-app-token \
+  -e ANTHROPIC_API_KEY=sk-ant-your-api-key \
+  ghcr.io/bitrise-io/bitclaw:latest
+```
+
+   (The image is published by this repo's CI; to build locally instead:
+   `docker build -t bitclaw .` and use `bitclaw` as the image name. The two
+   volumes persist the SQLite database and the conversation files that
+   `--resume` replays, so the bot keeps its memory across restarts.)
+
+3. Invite the bot to a channel and @mention it. It talks — and it will tell
+   you, accurately, that it can't code yet.
+
+### Step 2 — give it hands (this is the reason this repo exists)
+
+You need a **Bitrise workspace with RDE access** (RDE is in beta —
+[contact Bitrise](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview)
+if your workspace doesn't have it) and a
+[personal access token](https://app.bitrise.io/me/account/security). Then
+build the **coding-agent template** once, following
+[docs/rde-template.md](docs/rde-template.md) — that's where the git-only SSH
+setup and the coding agent's own guardrails live — and add three vars to the
+command above:
+
+```bash
+  -e BITRISE_TOKEN=your-bitrise-pat \
+  -e BITRISE_WORKSPACE_ID=your-workspace-id \
+  -e RDE_TEMPLATE_ID=your-template-id \
+```
+
+Now *"@bitclaw clone &lt;a repo the template's SSH key can read&gt; and fix
+the failing test"* spins up a disposable VM with Claude Code inside, and the
+bot narrates progress in the thread while the coding agent works and pushes
+a branch.
+
+### Step 3 — let it ship (GitHub)
+
+A GitHub PAT with `repo` + `read:org`, the org whose members you trust, and
+a webhook secret:
+
+```bash
+  -e GITHUB_TOKEN=ghp-your-token \
+  -e GITHUB_ALLOWED_ORG=your-github-org \
+  -e GITHUB_WEBHOOK_SECRET=generate-with-openssl-rand-hex-32 \
+```
+
+For review/CI events to flow back, GitHub must reach
+`http://<host>:8080/webhooks/github` — for local development a tunnel such
+as `ngrok http 8080` works. Point an org or repo webhook there (content type
+JSON, your HMAC secret, events: pull requests, issue comments, PR reviews
+and review comments, check runs, workflow runs). Now the bot opens the PR
+itself, relays vetted review comments to the coding agent, and on a public
+repo every write comes to Slack as an Approve/Reject button first.
+
+### Optional — Jira
+
+`JIRA_AUTH`, `JIRA_HOST`, `JIRA_BOT_ACCOUNT_ID`, `JIRA_WEBHOOK_SECRET`, and
+`JIRA_DEFAULT_CHANNEL` (see [.env.example](.env.example)) enable the hosted
+Atlassian MCP server plus the Jira webhook: a ticket assigned to the bot
+bootstraps its own Slack thread, and comments/transitions route back to it.
+
+### Running from source
 
 ```bash
 git clone <this repo> && cd bitclaw
 
-cp .env.example .env          # fill in tokens, org, template id
+cp .env.example .env          # same tiers — fill in what your step needs
 cp .mcp.json.example .mcp.json
 
-# The two stdio MCP binaries must be on PATH:
+# Steps 2–3 need the two stdio MCP binaries on PATH (the Docker image ships
+# them prebuilt):
 go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest
 # ...and the Bitrise RDE server — build/install per its README:
 #   https://github.com/bitrise-io/bitrise-mcp-dev-environments
@@ -196,40 +263,13 @@ uv sync
 uv run python main.py
 ```
 
-Invite the bot to a channel and @mention it. First useful test:
-*"@bitclaw what open PRs does &lt;your-github-org&gt;/&lt;some-repo&gt; have?"* —
-then graduate to a real coding task once the RDE template is wired.
-
-**Running without Jira:** delete the `atlassian` block from your `.mcp.json`
-and leave the `JIRA_*` vars unset. (If you keep the block with `JIRA_AUTH`
-unset, the loader logs a loud `Skipping MCP server atlassian` error at
-startup — deliberate for genuine misconfigurations, harmless here.)
-
-**Live status indicator:** the "watching CI…" status above the thread uses
-Slack's `assistant.threads.setStatus`. Depending on your workspace and app
+**Notes:** integrations whose env vars are unset are simply disabled — the
+startup log prints a capability summary saying what's off and which var
+enables it. The live status indicator ("watching CI…") uses Slack's
+`assistant.threads.setStatus`; depending on your workspace and app
 configuration you may need the app's *Agents & AI Apps* feature toggled on
-for statuses to render; every status call is best-effort, so the bot works
+for statuses to render — every status call is best-effort, so the bot works
 fine (minus the indicator) either way.
-
-### Running in Docker
-
-The included `Dockerfile` pre-builds the two Go MCP binaries and runs the bot
-as a non-root user. Two things live on disk and must be volume-mounted to
-survive container restarts: the SQLite database and the Claude Code CLI's
-conversation files (what `--resume` replays).
-
-```bash
-docker build -t bitclaw .
-docker run --env-file .env \
-  -e DB_PATH=/data/bitclaw.db \
-  -v bitclaw-data:/data \
-  -v bitclaw-claude:/home/app/.claude \
-  -v ./.mcp.json:/app/.mcp.json:ro \
-  -p 8080:8080 bitclaw
-```
-
-(`.env` and `.mcp.json` are covered by `.dockerignore` so they are never
-baked into the image — pass them at run time as above.)
 
 ---
 
@@ -241,13 +281,13 @@ baked into the image — pass them at run time as above.)
 | `SLACK_APP_TOKEN` | yes | — | App-level Socket Mode token (`xapp-`, `connections:write`) |
 | `ANTHROPIC_API_KEY` | yes* | — | Claude API key (*or be logged into the `claude` CLI) |
 | `CLAUDE_MODEL` | no | `claude-sonnet-5` | Model passed to the Agent SDK |
-| `GITHUB_TOKEN` | yes | — | PAT for the GitHub MCP server and the code-side trust/visibility checks (`repo` + `read:org`) |
-| `GITHUB_WEBHOOK_SECRET` | for webhooks | — | HMAC-SHA256 shared secret for `/webhooks/github` |
-| `GITHUB_ALLOWED_ORG` | yes | — | The trusted GitHub org. **No default** — unset means every author-trust check fails closed |
+| `GITHUB_TOKEN` | step 3 | — | PAT for the GitHub MCP server and the code-side trust/visibility checks (`repo` + `read:org`) |
+| `GITHUB_WEBHOOK_SECRET` | step 3 | — | HMAC-SHA256 shared secret for `/webhooks/github` |
+| `GITHUB_ALLOWED_ORG` | step 3 | — | The trusted GitHub org. **No default** — unset means every author-trust check fails closed |
 | `GITHUB_BOT_LOGIN` | no | `GET /user` | The bot's GitHub login, for webhook self-echo filtering |
-| `BITRISE_TOKEN` | for RDE | — | Bitrise personal access token |
-| `BITRISE_WORKSPACE_ID` | for RDE | — | Workspace holding the RDE template |
-| `RDE_TEMPLATE_ID` | for RDE | — | The ONE template bitclaw may launch (see [docs/rde-template.md](docs/rde-template.md)); unset → `devenv_create` is denied by a hook |
+| `BITRISE_TOKEN` | step 2 | — | Bitrise personal access token |
+| `BITRISE_WORKSPACE_ID` | step 2 | — | Workspace holding the RDE template |
+| `RDE_TEMPLATE_ID` | step 2 | — | The ONE template bitclaw may launch (see [docs/rde-template.md](docs/rde-template.md)); unset → `devenv_create` is denied by a hook |
 | `JIRA_AUTH` | no | — | `Basic base64(email:api_token)` header for the hosted Atlassian MCP |
 | `JIRA_HOST` | no | — | e.g. `example.atlassian.net`; passed to the agent as the Jira cloudId |
 | `JIRA_BOT_ACCOUNT_ID` | for Jira webhooks | — | Atlassian accountId of the bot (assignment detection + self-echo suppression) |
