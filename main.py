@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import re
+import sqlite3
 import sys
 import time
 from collections import OrderedDict
@@ -627,9 +628,29 @@ async def main():
 
     # Open the database before anything can touch it (session restore and
     # scheduled-message recovery below both hit it).
-    await init_db()
+    try:
+        await init_db()
+    except sqlite3.OperationalError as exc:
+        # The classic cause is a DB_PATH whose directory doesn't exist or
+        # isn't writable by this user (in Docker: a named volume created
+        # root-owned by an older image). Say so instead of dumping a
+        # thread-teardown traceback.
+        sys.exit(
+            f"Could not open the SQLite database at "
+            f"{os.environ.get('DB_PATH', './bitclaw.db')}: {exc}. "
+            "Check that the directory exists and is writable by this user — "
+            "in Docker, `docker volume rm` any data volume created by an "
+            "older image so it is re-initialized with the right ownership."
+        )
 
-    auth = await app.client.auth_test()
+    try:
+        auth = await app.client.auth_test()
+    except Exception as exc:
+        sys.exit(
+            f"Slack rejected the bot token (auth.test failed: {exc}). "
+            "Check SLACK_BOT_TOKEN — it must be the xoxb- token from the "
+            "app's OAuth & Permissions page, after installing the app."
+        )
     _bot_user_id = auth["user_id"]
     _bot_id = auth.get("bot_id")
     logger.info(
@@ -679,6 +700,13 @@ async def main():
     try:
         await handler.start_async()
     finally:
+        # Disconnect the Socket Mode websocket and close its HTTP session
+        # first — otherwise shutdown ends with aiohttp "Unclosed client
+        # session" noise from the still-open Slack connection.
+        try:
+            await handler.close_async()
+        except Exception:
+            logger.debug("socket handler close failed during shutdown", exc_info=True)
         for task in (eviction_task, autoclose_task, pastdue_task):
             if task is None:
                 continue
@@ -697,4 +725,10 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Ctrl-C: asyncio.run() has already cancelled main() and executed its
+        # finally-block cleanup (DB closed, listeners stopped) — the re-raised
+        # KeyboardInterrupt would just dump a scary but meaningless traceback.
+        print("bitclaw: interrupted — shut down.")

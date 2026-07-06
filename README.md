@@ -181,7 +181,6 @@ exists to show.
 ```bash
 docker run -it --rm \
   -v bitclaw-data:/data -v bitclaw-claude:/home/app/.claude \
-  -e DB_PATH=/data/bitclaw.db \
   -p 8080:8080 \
   -e SLACK_BOT_TOKEN=xoxb-your-bot-token \
   -e SLACK_APP_TOKEN=xapp-your-app-token \
@@ -191,8 +190,9 @@ docker run -it --rm \
 
    (The image is published by this repo's CI; to build locally instead:
    `docker build -t bitclaw .` and use `bitclaw` as the image name. The two
-   volumes persist the SQLite database and the conversation files that
-   `--resume` replays, so the bot keeps its memory across restarts.)
+   volumes persist the SQLite database — the image defaults `DB_PATH` to
+   `/data/bitclaw.db` — and the conversation files that `--resume` replays,
+   so the bot keeps its memory across restarts.)
 
 3. Invite the bot to a channel and @mention it. It talks — and it will tell
    you, accurately, that it can't code yet.

@@ -37,6 +37,14 @@ ENV HOME=/home/app PATH="/home/app/bin:${PATH}" PYTHONUNBUFFERED=1
 # The MCP binaries land on PATH — .mcp.json references them by bare name.
 COPY --from=go-mcp-builder --chown=app:app /out/ /home/app/bin/
 
+# Pre-create the two persistent-state directories WITH app ownership: a named
+# volume mounted at a path that doesn't exist in the image is initialized
+# root-owned, and the non-root app user then can't create the SQLite file
+# ("unable to open database file") or the Claude CLI's session files. When
+# the path exists in the image, the fresh volume inherits its ownership.
+RUN mkdir -p /data /home/app/.claude && chown app:app /data /home/app/.claude
+ENV DB_PATH=/data/bitclaw.db
+
 WORKDIR /app
 RUN chown app:app /app
 USER app
@@ -56,4 +64,7 @@ RUN uv sync --frozen --no-dev
 RUN cp .mcp.json.example .mcp.json
 
 EXPOSE 8080
-CMD ["uv", "run", "python", "main.py"]
+# Run the synced venv's python directly: `uv run` would re-resolve the
+# environment at container start (installing dev deps, hitting the network);
+# the image's venv is already built above.
+CMD ["/app/.venv/bin/python", "main.py"]
