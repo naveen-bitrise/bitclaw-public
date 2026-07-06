@@ -34,6 +34,7 @@ from tools.hooks import (
     deny_github_write_tools,
     deny_include_secrets_on_get_session,
     deny_include_secrets_on_get_template,
+    inject_saved_input_mapping_on_devenv_create,
     make_github_trust_filter,
     make_public_egress_gate,
     require_ai_prompt_on_devenv_create,
@@ -123,6 +124,7 @@ Creating the RDE (the disposable cloud dev environment the coding agent runs in)
   3. Branch rules: it works on its OWN new branch and must NEVER commit or push to the default branch; %%RDE_PR_FLOW%%
   4. The "Never block on input …" guardrail verbatim (see "Orchestrator, not a coder").
   5. %%RDE_HYGIENE_ITEM%%
+- The template's session inputs (the coding agent's git SSH key and identity) fill themselves: every create you issue requests saved-input auto-mapping (injected in code), which matches the bot account's saved inputs to the template's inputs by key. Do NOT pass session_inputs values yourself. If create fails with "missing required input: <KEY>", that is an OPERATOR setup gap — a saved input named <KEY> is missing on the bot's Bitrise account (docs/rde-template.md) — so report it in the thread; don't retry or improvise values.
 - Immediately after create succeeds, call register_anchor(kind="rde_session", key="<the session_id returned by create>") so cleanup paths can find it. The coding agent runs in a tmux session named `claude-<session_id>` — construct that name from the session_id you already have; don't discover it."""
 
 _PROMPT_PUBLIC_PRIVATE = """\
@@ -706,13 +708,16 @@ class AgentLoop:
                     # ai_prompt → no coding agent boots → every later
                     # send-keys silently no-ops) and the template must be the
                     # operator-pinned one. Order matters in a matcher's hook
-                    # list generally — validators first, input-mutating hooks
-                    # last — so keep any future updatedInput hook after these.
+                    # list: validators first, input-mutating hooks last — the
+                    # saved-input mapping injector returns only updatedInput
+                    # (never a permission decision), so it can't override a
+                    # validator's deny.
                     HookMatcher(
                         matcher="mcp__infra__bitrise_devenv_create",
                         hooks=[
                             require_ai_prompt_on_devenv_create,
                             require_pinned_template_on_devenv_create,
+                            inject_saved_input_mapping_on_devenv_create,
                         ],
                     ),
                     # Deny reading secret values back out of the infra MCP:

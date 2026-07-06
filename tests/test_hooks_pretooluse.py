@@ -168,3 +168,47 @@ async def test_devenv_hooks_ignore_other_tools(monkeypatch):
     assert await hooks.require_ai_prompt_on_devenv_create(other, "t1", None) == {}
     assert await hooks.require_pinned_template_on_devenv_create(other, "t1", None) == {}
     assert await hooks.deny_include_secrets_on_get_template(other, "t1", None) == {}
+
+
+# ---------------------------------------------------------------------------
+# inject_saved_input_mapping_on_devenv_create — the template's required
+# session inputs carry no values (templates are workspace-shared; the secrets
+# live as saved inputs on the bot's account), so every create must request
+# saved-input auto-mapping or it fails with "missing required input".
+# ---------------------------------------------------------------------------
+
+def updated_input(hook_result: dict) -> dict | None:
+    return (hook_result.get("hookSpecificOutput") or {}).get("updatedInput")
+
+
+async def test_saved_input_mapping_injected_on_create():
+    """A create call without the flag gets map_saved_to_session_inputs=True,
+    with every other field preserved verbatim."""
+    result = await hooks.inject_saved_input_mapping_on_devenv_create(
+        hook_input(CREATE, {"template_id": "tmpl-1", "ai_prompt": "fix it", "name": "s1"}),
+        "t1", None,
+    )
+    updated = updated_input(result)
+    assert updated == {
+        "template_id": "tmpl-1",
+        "ai_prompt": "fix it",
+        "name": "s1",
+        "map_saved_to_session_inputs": True,
+    }
+    # updatedInput only — an input-mutating hook must never carry a
+    # permission decision (it could override a validator's deny).
+    assert decision(result) is None
+
+
+@pytest.mark.parametrize("explicit", [True, False])
+async def test_saved_input_mapping_respects_explicit_flag(explicit):
+    """An agent-supplied flag — either way — is left alone."""
+    result = await hooks.inject_saved_input_mapping_on_devenv_create(
+        hook_input(CREATE, {"map_saved_to_session_inputs": explicit}), "t1", None,
+    )
+    assert result == {}
+
+
+async def test_saved_input_mapping_ignores_other_tools():
+    other = hook_input("mcp__infra__bitrise_devenv_get", {})
+    assert await hooks.inject_saved_input_mapping_on_devenv_create(other, "t1", None) == {}

@@ -342,6 +342,43 @@ async def require_pinned_template_on_devenv_create(input, tool_use_id, context):
     }
 
 
+async def inject_saved_input_mapping_on_devenv_create(input, tool_use_id, context):
+    """Set map_saved_to_session_inputs=true on devenv create calls.
+
+    The coding-agent template's required session inputs (the git SSH key and
+    identity) deliberately carry no values in the template — templates are
+    workspace-shared, so a secret baked into one would be usable by every
+    workspace member. Instead the values live as saved inputs on the bot's own
+    Bitrise account and are auto-filled at create time by exact key match —
+    but ONLY when the create call requests the mapping. That's a transport
+    detail the agent shouldn't have to remember for its creates to work, so it
+    is injected here in code. Safe on every call shape: explicitly supplied
+    session_inputs always win over auto-mapping (a backend rule), and a flag
+    the agent already set — either way — is left alone.
+
+    Returns ONLY updatedInput (no permission decision), so it can never
+    override a deny from the validators that run before it; register it LAST
+    in the create matcher's hook list.
+    """
+    if input.get("tool_name") != _DEVENV_CREATE_TOOL:
+        return {}
+    tool_input = input.get("tool_input") or {}
+    if "map_saved_to_session_inputs" in tool_input:
+        return {}
+    updated = dict(tool_input)
+    updated["map_saved_to_session_inputs"] = True
+    logger.info(
+        "%s: injected map_saved_to_session_inputs=true (tool_use_id=%s)",
+        _DEVENV_CREATE_TOOL, tool_use_id,
+    )
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "updatedInput": updated,
+        }
+    }
+
+
 def _include_secrets_is_truthy(tool_input):
     """True iff the call carries a truthy ``include_secrets`` flag.
 

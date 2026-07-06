@@ -31,6 +31,11 @@ def test_full_config_contains_all_sections(full_env):
     assert "tmpl-42" in p
     assert "tmux send-keys" in p
     assert "Never block on input" in p
+    # The agent is taught that session inputs auto-fill from saved inputs
+    # (the mapping flag itself is injected by a hook) and that a
+    # missing-required-input failure is an operator setup gap, not retryable.
+    assert "saved-input auto-mapping" in p
+    assert "missing required input" in p
     # Jira section present with the host as cloudId.
     assert "example.atlassian.net" in p
     # No "not configured" notes in a full build.

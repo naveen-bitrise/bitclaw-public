@@ -4,61 +4,122 @@ bitclaw launches every coding task into a Bitrise Remote Development
 Environment (RDE) created from **one operator-created template**. The template
 id goes into `RDE_TEMPLATE_ID`, and a PreToolUse hook refuses any
 `bitrise_devenv_create` call that names a different template (or none) — the
-orchestrator can never improvise an environment. This document shows how to
-build that template.
+orchestrator can never improvise an environment.
 
-## Template concepts, briefly
+This is a one-time setup, roughly **10 minutes**. Follow the steps in order;
+each says exactly what to create and where.
 
-An RDE [template](https://docs.bitrise.io/en/bitrise-rde/configuration/templates)
-is a reusable session configuration: a stack (OS image), a machine type, a
-working directory, two scripts, and typed inputs.
+## First, the 30-second security model (read this — it's why the steps look the way they do)
 
-- **Warmup script** — Bash, runs **once** when the session is first created.
-  All the setup below lives here.
-- **Startup script** — runs on **every** start, including after a restore;
-  must be idempotent. This template leaves it empty.
-- **Template variables** — values baked into the template (markable as
-  secret, encrypted at rest). Use these for org-wide credentials the
-  orchestrator should never see or supply.
-- **Session inputs** — filled in per session at create time, optionally
-  exposed as environment variables. This is how bitclaw parameterizes each
-  box.
-- **[Saved inputs](https://docs.bitrise.io/en/bitrise-rde/configuration/saved-inputs)**
-  — account-scoped reusable credentials a session input can pull from; the
-  value is resolved server-side and never shown in the UI.
+Secrets flow through three layers, and the split is deliberate:
+
+| Layer | Scope | Holds |
+|---|---|---|
+| **Template** | shared with the whole Bitrise **workspace** | scripts + the *names* of the inputs it needs — never per-user secret values (anyone in the workspace can create a session from a template and read its env, so a secret baked in here would be usable by every member) |
+| **Saved inputs** | private to one Bitrise **account** — for bitclaw, the account that owns `BITRISE_TOKEN` | the actual secret values (SSH key, Claude credential) |
+| **Create call** | per session | joins the two: bitclaw requests *saved-input auto-mapping*, and the platform fills the template's inputs from the creating account's saved inputs **by exact key match** |
+
+So: the template *declares* `GIT_SSH_KEY_B64` and friends; your bot account's
+saved inputs *hold* the values under those exact names; and bitclaw's create
+call (a code-injected `map_saved_to_session_inputs` flag — nothing for you to
+configure) wires them together at session-creation time. If a key name doesn't
+match exactly, creation fails with `missing required input: <KEY>` — that
+error always means "fix the saved inputs on the bot account".
+
+## What you'll create
+
+- **4 saved inputs** on the bot's Bitrise account (steps 1–2),
+- **1 template** with 3 declared session inputs and a warmup script (step 3),
+- then hand-test it (step 4) and wire the id into `.env` (step 5).
+
+## Step 1 — the SSH key (the box's ONLY GitHub credential)
+
+The coding agent talks to GitHub through **git over SSH only** — deliberately
+no API token in the box (README guardrail 9). Use a **dedicated machine
+user**'s key with push access to the repos the agent will work on.
+
+> **First-test shortcut:** for your very first run, a personal SSH key that
+> can push to one scratch repo works fine — switch to a machine user before
+> letting it near real repos.
+
+```bash
+# A fresh key for the agent (no passphrase — it's used non-interactively):
+ssh-keygen -t ed25519 -f bitclaw_ed25519 -N "" -C "bitclaw-coding-agent"
+# Add bitclaw_ed25519.pub to the machine user (or as a deploy key with write
+# access on the scratch repo), then one-line-base64 the PRIVATE key:
+base64 < bitclaw_ed25519 | tr -d '\n' > bitclaw_ed25519.b64
+```
+
+Also note the commit author identity you'll use: if the machine user has
+commit-email privacy on, the email **must** be its noreply address
+(`<id>+<login>@users.noreply.github.com`, shown on the account's email
+settings page) or every push fails with GitHub's `GH007` error.
+
+## Step 2 — four saved inputs, on the BOT's account
+
+⚠️ Log in to Bitrise as the **same account whose PAT is in `BITRISE_TOKEN`**.
+Saved inputs are account-scoped, and only the *creating* account's saved
+inputs are consulted at session-create time — values saved on your personal
+account do nothing if the bot authenticates as someone else.
+
+In [the Bitrise app](https://app.bitrise.io): **Remote Dev Environments →
+Saved inputs → New**, create these — keys verbatim, they must match the
+template's input names character for character:
+
+| Key | Secret | Value |
+|---|---|---|
+| `GIT_SSH_KEY_B64` | ✓ | contents of `bitclaw_ed25519.b64` (one line) |
+| `GIT_USER_EMAIL` |  | the commit author email from step 1 |
+| `GIT_USER_NAME` |  | e.g. `bitclaw coding agent` |
+| `CLAUDE_CODE_OAUTH_TOKEN` *or* `ANTHROPIC_API_KEY` | ✓ | the Claude credential — in the UI use the dedicated **Claude Code credential** input type. This is what lets `ai_prompt` boot an already-authenticated Claude Code in each session |
+
+Or from a terminal, with [`bitrise-cli`](https://github.com/bitrise-io/bitrise-cli)
+logged in **as the bot account**:
+
+```bash
+bitrise-cli rde saved-input create --key GIT_SSH_KEY_B64 --value-stdin --secret < bitclaw_ed25519.b64
+bitrise-cli rde saved-input create --key GIT_USER_EMAIL --value '<id>+<login>@users.noreply.github.com'
+bitrise-cli rde saved-input create --key GIT_USER_NAME --value 'bitclaw coding agent'
+echo -n "sk-ant-..." | bitrise-cli rde saved-input create --key ANTHROPIC_API_KEY --value-stdin --secret
+```
+
+## Step 3 — the template
+
+**Remote Dev Environments → Templates → New** (or `bitrise-cli rde template
+create --file template.json` — run `bitrise-cli rde template create --help`
+for the JSON spec):
+
+1. **Stack / machine type:** any Linux stack works; nothing below is
+   stack-specific. Pick a mid-size machine type.
+2. **Startup script:** leave empty. (It runs on *every* start and must be
+   idempotent; everything here is one-time setup, which belongs in warmup.)
+3. **Warmup script:** paste the script from the next section.
+4. **Session inputs** — declare these three, names exactly matching step 2's
+   saved-input keys:
+
+   | Key | Required | Expose as env var | Description |
+   |---|---|---|---|
+   | `GIT_SSH_KEY_B64` | ✓ | ✓ | base64 of the agent's SSH private key |
+   | `GIT_USER_EMAIL` | ✓ | ✓ | commit author email |
+   | `GIT_USER_NAME` | ✓ | ✓ | commit author name |
+
+   Declaring them *required with no default* is what makes a misconfigured
+   setup fail loudly at create time instead of producing a half-working box.
+   (No session input is needed for the Claude credential — the platform picks
+   that up from the creating account's saved input directly.)
+5. **Template variables:** none. Per the table up top, anything you'd bake in
+   here is readable/usable by the whole workspace — reserve it for genuinely
+   org-wide, low-sensitivity config (a mirror URL, a registry username),
+   never keys or tokens.
 
 Sessions snapshot the template at create time, so editing the template later
 never changes already-running sessions.
 
-## What this template needs
-
-**Stack / machine type:** any Linux stack works; pick one that matches your
-toolchains. Nothing below is stack-specific.
-
-**Session inputs** (all required, all exposed as env vars — bitclaw's create
-call supplies them, typically backed by saved inputs):
-
-| Input | What it is |
-|---|---|
-| `GIT_SSH_KEY_B64` | Base64 (single line: `base64 < key \| tr -d '\n'`) of an SSH **private key with push access** to the target repos. Use a dedicated machine user, not a personal key. This is deliberately the box's **only** GitHub credential — git push/pull is its entire GitHub access; there is **no API token in the box** (see guardrail 9 in the README). |
-| `GIT_USER_EMAIL` | Commit author email. If the machine user has commit-email privacy on, this must be its noreply address (`<id>+<login>@users.noreply.github.com`) or every push fails with GitHub's GH007 error. |
-| `GIT_USER_NAME` | Commit author name. |
-
-**Claude Code credential as a saved input:** store a
-`CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) once as a saved input on
-the account that creates sessions. The create-time `ai_prompt` field — which
-boots Claude Code automatically inside the session — requires a saved Claude
-Code credential, and this is what makes every session start with an already
-authenticated agent.
-
-**The `ai_prompt` is not part of the template.** bitclaw composes it per
-task: which repo to clone, the full task text verbatim, branch rules, and the
-never-block guardrail. When a session is created with an `ai_prompt`, Claude
-Code boots inside a tmux session on the box; bitclaw talks to the coding
-agent by sending keys into that tmux and reads its progress by capturing the
-pane.
-
 ## The warmup script
+
+Runs once, when a session is created. This is where the box's own guardrails
+are installed — the pinned host keys, the git-only policy, and the deny hook
+that keeps the coding agent off the GitHub API.
 
 ```bash
 # The platform spawns the warmup with cwd=/root (unreadable to the session
@@ -195,21 +256,42 @@ Why the fussy details are there:
   wasting turns discovering that boundary (and block unauthenticated API
   reads, which need no credential at all).
 
-## Create it and wire it up
+## Step 4 — test it once by hand
 
-1. Create the template in the [Bitrise app](https://app.bitrise.io) under
-   **Remote Dev Environments → Templates** (or with
-   `bitrise-cli rde template create` — see the
-   [CLI](https://docs.bitrise.io/en/bitrise-rde/ways-to-use-rde/bitrise-rde-cli)):
-   pick a Linux stack and machine type, paste the warmup script, declare the
-   three session inputs above (required, exposed as env vars), and leave the
-   startup script empty.
-2. Save your Claude Code credential and the machine user's SSH key as
-   [saved inputs](https://docs.bitrise.io/en/bitrise-rde/configuration/saved-inputs)
-   so session creation can reference them without ever handling the values.
-3. Test it once by hand: create a session from the template with a trivial
-   `ai_prompt` ("clone <some repo> and summarize its README") and watch the
-   warmup log for the `[warmup]` echo lines.
-4. Grab the template id (`bitrise-cli rde template list`, or from the
-   template's URL in the UI) and set it as `RDE_TEMPLATE_ID` in bitclaw's
-   `.env`.
+Before pointing bitclaw at it, create one session from the template in the
+UI: pick the template, let the three inputs fill from your saved inputs
+(select them if the UI doesn't preselect), and set a trivial AI prompt like
+*"clone <your scratch repo> and summarize its README in the terminal"*. Then:
+
+- watch the warmup log for the three `[warmup]` echo lines (identity, url
+  rewrite, jq);
+- open the web terminal and check Claude Code is running in tmux
+  (`tmux list-sessions`);
+- confirm the clone worked over SSH (`ls`, `git -C <repo> remote -v`).
+
+Terminate and delete the session when done.
+
+## Step 5 — wire it up
+
+Grab the template id (from the template's URL in the UI, or
+`bitrise-cli rde template list`) and set it in bitclaw's `.env`:
+
+```bash
+RDE_TEMPLATE_ID=<the id>
+```
+
+Restart the bot — the startup capability summary should now show
+`coding (RDE) ✓`. From here bitclaw handles session creation entirely on its
+own: every create it issues auto-fills the template's inputs from the bot
+account's saved inputs (a code-injected `map_saved_to_session_inputs` flag),
+so there is nothing to supply per task.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| create fails: `missing required input: <KEY>` | No saved input named `<KEY>` on the **bot's** account (the `BITRISE_TOKEN` owner). Keys are exact-match — check spelling/case, and that you weren't logged in as a different account in step 2. |
+| push fails with `GH007` | The commit author email must be the machine user's noreply address — fix the `GIT_USER_EMAIL` saved input. |
+| Claude Code isn't running in tmux | The creating account has no Claude Code credential saved input (step 2, fourth row) — `ai_prompt` needs it to boot an authenticated agent. |
+| `git clone` host-key errors | GitHub rotated its host keys — refresh the pinned `known_hosts` block from `https://api.github.com/meta` and update the template. |
+| warmup log says `jq: MISSING` | The stack image lacks `jq`; install it in the warmup before the deny-hook block (the hook fails closed without it, denying every Bash call). |

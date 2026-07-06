@@ -204,9 +204,10 @@ You need a **Bitrise workspace with RDE access** (RDE is in beta —
 if your workspace doesn't have it) and a
 [personal access token](https://app.bitrise.io/me/account/security). Then
 build the **coding-agent template** once, following
-[docs/rde-template.md](docs/rde-template.md) — that's where the git-only SSH
-setup and the coding agent's own guardrails live — and add three vars to the
-command above:
+[docs/rde-template.md](docs/rde-template.md) — a ~10-minute checklist (four
+saved inputs on the PAT's account + one template) that also explains the
+git-only SSH setup and the coding agent's own guardrails — and add three vars
+to the command above:
 
 ```bash
   -e BITRISE_TOKEN=your-bitrise-pat \
