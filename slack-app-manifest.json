@@ -1,7 +1,7 @@
 {
   "display_information": {
     "name": "bitclaw",
-    "description": "Slack-native AI engineering agent: routes every thread to a persistent Claude conversation and delegates coding work to disposable cloud dev environments.",
+    "description": "Slack-native AI engineering agent.",
     "background_color": "#1f2430"
   },
   "features": {
