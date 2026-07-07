@@ -107,10 +107,16 @@ for the JSON spec):
    setup fail loudly at create time instead of producing a half-working box.
    (No session input is needed for the Claude credential — the platform picks
    that up from the creating account's saved input directly.)
-5. **Template variables:** none. Per the table up top, anything you'd bake in
-   here is readable/usable by the whole workspace — reserve it for genuinely
-   org-wide, low-sensitivity config (a mirror URL, a registry username),
-   never keys or tokens.
+5. **Template variables:** optional. This layer is for genuinely org-wide,
+   NON-secret config every session should share — per the table up top,
+   anything baked in here is usable by the whole workspace, so never keys or
+   tokens. Two useful ones (exposed as env vars, read by Claude Code) if you
+   want the coding agent off the defaults:
+
+   | Key | Example value | Effect |
+   |---|---|---|
+   | `ANTHROPIC_MODEL` | `opus[1m]` | which model Claude Code runs in the box |
+   | `CLAUDE_CODE_EFFORT_LEVEL` | `xhigh` | its reasoning effort |
 
 Sessions snapshot the template at create time, so editing the template later
 never changes already-running sessions.
@@ -274,8 +280,10 @@ Why the fussy details are there:
   tmux, it doesn't click Yes for it). Auto mode is safe to grant *here*
   because everything dangerous was already taken away from the box; the
   allow rule then keeps the pre-approved install/build/test trust confined
-  to repos from your own org. You can also pin a `model` in the same jq
-  object if you want the coding agent on a specific one.
+  to repos from your own org. (To pin the coding agent's model or effort,
+  prefer the `ANTHROPIC_MODEL` / `CLAUDE_CODE_EFFORT_LEVEL` template
+  variables from step 3 over editing this script — they're visible and
+  editable in the template UI.)
 
 ## Step 4 — test it once by hand
 
