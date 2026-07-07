@@ -44,6 +44,12 @@ COPY --from=go-mcp-builder --chown=app:app /out/ /home/app/bin/
 # the path exists in the image, the fresh volume inherits its ownership.
 RUN mkdir -p /data /home/app/.claude && chown app:app /data /home/app/.claude
 ENV DB_PATH=/data/bitclaw.db
+# By default the Claude Code CLI keeps its config at ~/.claude.json — OUTSIDE
+# the ~/.claude directory the quickstart volume-mounts — so every container
+# restart would lose it and the CLI would warn "configuration file not found"
+# (its periodic backups land inside ~/.claude/backups, which survives, making
+# the warning louder). Point the whole config at the persisted directory.
+ENV CLAUDE_CONFIG_DIR=/home/app/.claude
 
 WORKDIR /app
 RUN chown app:app /app

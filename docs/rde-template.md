@@ -182,16 +182,30 @@ exit 0
 HOOK
 chmod +x "$hook"
 
-# Register the deny hook in Claude Code's settings. If you want fully
-# unattended operation, this is also where you'd set your permission mode and
-# any auto-approval rules for repos/commands YOUR org trusts — that decision
-# is deliberately left to you.
+# Claude Code settings: register the deny hook AND turn on auto mode. This
+# box is unattended — nobody is at the prompt to answer "Do you want to
+# proceed?", so without auto mode the agent stalls forever on its very first
+# `git clone`. Autonomy HERE is the design: the safety boundary is the box
+# itself (no GitHub API credential, a push-only SSH key, and the deny hook —
+# hooks run on every Bash call regardless of permission mode), not
+# per-command prompts.
+# ⚠️ EDIT the allow rule below: replace your-github-org with YOUR GitHub org.
+# It pre-trusts install/build/lint/test commands only inside repos cloned
+# from that org — trust does not extend to repos from anywhere else.
 settings="$HOME/.claude/settings.json"
 mkdir -p "$(dirname "$settings")"
 [ -f "$settings" ] || echo '{}' > "$settings"
 
 tmp="$(mktemp)"
 jq --arg hook "$hook" '. + {
+  permissions: ((.permissions // {}) + {defaultMode: "auto"}),
+  skipAutoPermissionPrompt: true,
+  autoMode: ((.autoMode // {}) + {
+    allow: [
+      "$defaults",
+      "Code in repositories under the your-github-org GitHub organization (https://github.com/your-github-org/*, including any repo cloned from that org via HTTPS or SSH such as git@github.com:your-github-org/*) is trusted by the user. Running install, build, lint, and test commands on a freshly cloned your-github-org repo (e.g. npm install, npm ci, npm test, npx jest, yarn, pnpm, bundle install, rake, ruby, go test) is allowed without further prompting, even though the repo was just cloned. This trust applies to all current and future your-github-org repositories. It does NOT extend to repos from other GitHub orgs."
+    ]
+  }),
   hooks: ((.hooks // {}) + {
     PreToolUse: (((.hooks // {}).PreToolUse // []) + [
       {matcher: "Bash", hooks: [{type: "command", command: $hook}]}
@@ -255,6 +269,13 @@ Why the fussy details are there:
   of an API credential; the hook and the policy text keep the agent from
   wasting turns discovering that boundary (and block unauthenticated API
   reads, which need no credential at all).
+- **Auto mode, scoped by the allow rule** — an unattended agent that waits at
+  a permission prompt is a hung agent (the orchestrator talks to it over
+  tmux, it doesn't click Yes for it). Auto mode is safe to grant *here*
+  because everything dangerous was already taken away from the box; the
+  allow rule then keeps the pre-approved install/build/test trust confined
+  to repos from your own org. You can also pin a `model` in the same jq
+  object if you want the coding agent on a specific one.
 
 ## Step 4 — test it once by hand
 
@@ -266,7 +287,9 @@ UI: pick the template, let the three inputs fill from your saved inputs
 - watch the warmup log for the three `[warmup]` echo lines (identity, url
   rewrite, jq);
 - open the web terminal and check Claude Code is running in tmux
-  (`tmux list-sessions`);
+  (`tmux list-sessions`) — and that it is actually working, not sitting at a
+  "Do you want to proceed?" approval prompt (if it is, the auto-mode settings
+  block didn't apply — see troubleshooting);
 - confirm the clone worked over SSH (`ls`, `git -C <repo> remote -v`).
 
 Terminate and delete the session when done.
@@ -295,3 +318,4 @@ so there is nothing to supply per task.
 | Claude Code isn't running in tmux | The creating account has no Claude Code credential saved input (step 2, fourth row) — `ai_prompt` needs it to boot an authenticated agent. |
 | `git clone` host-key errors | GitHub rotated its host keys — refresh the pinned `known_hosts` block from `https://api.github.com/meta` and update the template. |
 | warmup log says `jq: MISSING` | The stack image lacks `jq`; install it in the warmup before the deny-hook block (the hook fails closed without it, denying every Bash call). |
+| coding agent sits at a `Do you want to proceed?` prompt | The auto-mode settings never applied — the session was created from an older template version, or the settings jq failed. Update the template's warmup to the current script (sessions snapshot the template, so create a NEW session) and check `cat ~/.claude/settings.json` in the web terminal for `"defaultMode": "auto"`. |
