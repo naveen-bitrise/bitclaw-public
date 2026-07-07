@@ -10,11 +10,21 @@
 # startup to <100ms and removes runtime network dependence. @latest is fine:
 # the image tag is the pin (resolved once, at build time).
 # -----------------------------------------------------------------------------
-FROM golang:1.26-bookworm AS go-mcp-builder
-ENV GOBIN=/out CGO_ENABLED=0
+# The stage always runs on the build host's own arch ($BUILDPLATFORM) and
+# cross-compiles for the target — Go does this natively, so the arm64 leg of a
+# multi-arch build doesn't pay the QEMU-emulation tax for the compile.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS go-mcp-builder
+ARG TARGETOS TARGETARCH
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
+# `go install` refuses GOBIN for cross-compiled targets: binaries land in
+# $GOPATH/bin natively but $GOPATH/bin/${GOOS}_${GOARCH} when crossing —
+# hence the two-path copy.
 RUN mkdir -p /out \
     && go install github.com/github/github-mcp-server/cmd/github-mcp-server@latest \
-    && go install github.com/bitrise-io/bitrise-mcp-dev-environments@latest
+    && go install github.com/bitrise-io/bitrise-mcp-dev-environments@latest \
+    && { cp "$(go env GOPATH)/bin/${GOOS}_${GOARCH}/"* /out/ 2>/dev/null \
+         || cp "$(go env GOPATH)/bin/github-mcp-server" \
+               "$(go env GOPATH)/bin/bitrise-mcp-dev-environments" /out/; }
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime. No Go toolchain — just the compiled binaries.
