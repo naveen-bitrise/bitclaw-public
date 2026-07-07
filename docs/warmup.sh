@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # bitclaw coding-agent RDE template — warmup script.
-# Paste this into the template's "Warmup script" field (see
-# docs/rde-template.md, step 3). It runs ONCE, when a session is created.
+# Paste this into the template's "Warmup script" field AS-IS (see
+# docs/rde-template.md, step 3) — there are no placeholders to edit. It runs
+# ONCE, when a session is created.
 #
-# ⚠️ ONE EDIT REQUIRED before pasting: replace `your-github-org` (it appears
-# in the auto-mode allow rule below, marked with the same ⚠️) with YOUR
-# GitHub organization.
+# Everything org-specific arrives as env vars declared on the template:
+#   - session inputs (steps 2-3): GIT_SSH_KEY_B64, GIT_USER_EMAIL, GIT_USER_NAME
+#   - template variable (step 3): GITHUB_ORG — your GitHub org name; scopes
+#     the coding agent's pre-approved install/build/test trust to repos
+#     cloned from that org (unset → that allow rule is skipped)
 
 # The platform spawns the warmup with cwd=/root (unreadable to the session
 # user), and git dies on repo discovery from an unreadable cwd — even for
@@ -74,22 +77,29 @@ chmod +x "$hook"
 # itself (no GitHub API credential, a push-only SSH key, and the deny hook —
 # hooks run on every Bash call regardless of permission mode), not
 # per-command prompts.
-# ⚠️ EDIT the allow rule below: replace your-github-org with YOUR GitHub org.
-# It pre-trusts install/build/lint/test commands only inside repos cloned
-# from that org — trust does not extend to repos from anywhere else.
+# The allow rule pre-trusts install/build/lint/test commands only inside
+# repos cloned from YOUR GitHub org — it is built from the GITHUB_ORG
+# template variable (step 3), so there is nothing to edit here. Unset →
+# the rule is skipped: the agent still runs, it just gets no pre-approved
+# clone-and-build trust.
+allow_rule=""
+if [ -n "${GITHUB_ORG:-}" ]; then
+  echo "[warmup] auto-mode allow rule scoped to GitHub org: $GITHUB_ORG"
+  allow_rule="Code in repositories under the $GITHUB_ORG GitHub organization (https://github.com/$GITHUB_ORG/*, including any repo cloned from that org via HTTPS or SSH such as git@github.com:$GITHUB_ORG/*) is trusted by the user. Running install, build, lint, and test commands on a freshly cloned $GITHUB_ORG repo (e.g. npm install, npm ci, npm test, npx jest, yarn, pnpm, bundle install, rake, ruby, go test) is allowed without further prompting, even though the repo was just cloned. This trust applies to all current and future $GITHUB_ORG repositories. It does NOT extend to repos from other GitHub orgs."
+else
+  echo "[warmup] GITHUB_ORG is not set — skipping the org-scoped auto-mode allow rule"
+fi
+
 settings="$HOME/.claude/settings.json"
 mkdir -p "$(dirname "$settings")"
 [ -f "$settings" ] || echo '{}' > "$settings"
 
 tmp="$(mktemp)"
-jq --arg hook "$hook" '. + {
+jq --arg hook "$hook" --arg allow "$allow_rule" '. + {
   permissions: ((.permissions // {}) + {defaultMode: "auto"}),
   skipAutoPermissionPrompt: true,
   autoMode: ((.autoMode // {}) + {
-    allow: [
-      "$defaults",
-      "Code in repositories under the your-github-org GitHub organization (https://github.com/your-github-org/*, including any repo cloned from that org via HTTPS or SSH such as git@github.com:your-github-org/*) is trusted by the user. Running install, build, lint, and test commands on a freshly cloned your-github-org repo (e.g. npm install, npm ci, npm test, npx jest, yarn, pnpm, bundle install, rake, ruby, go test) is allowed without further prompting, even though the repo was just cloned. This trust applies to all current and future your-github-org repositories. It does NOT extend to repos from other GitHub orgs."
-    ]
+    allow: (["$defaults"] + (if $allow == "" then [] else [$allow] end))
   }),
   hooks: ((.hooks // {}) + {
     PreToolUse: (((.hooks // {}).PreToolUse // []) + [

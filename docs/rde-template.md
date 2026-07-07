@@ -103,8 +103,9 @@ for the JSON spec):
    stack-specific. Pick a mid-size machine type.
 2. **Startup script:** leave empty. (It runs on *every* start and must be
    idempotent; everything here is one-time setup, which belongs in warmup.)
-3. **Warmup script:** paste [`warmup.sh`](warmup.sh) — one placeholder to
-   edit first; see [the warmup script](#the-warmup-script) below.
+3. **Warmup script:** paste [`warmup.sh`](warmup.sh) as-is — nothing to
+   edit; its one org-specific knob is the `GITHUB_ORG` template variable
+   (item 5 below). See [the warmup script](#the-warmup-script).
 4. **Session inputs** — declare these three, names exactly matching step 2's
    saved-input keys:
 
@@ -118,16 +119,17 @@ for the JSON spec):
    setup fail loudly at create time instead of producing a half-working box.
    (No session input is needed for the Claude credential — the platform picks
    that up from the creating account's saved input directly.)
-5. **Template variables:** optional. This layer is for genuinely org-wide,
-   NON-secret config every session should share — per the table up top,
-   anything baked in here is usable by the whole workspace, so never keys or
-   tokens. Two useful ones (exposed as env vars, read by Claude Code) if you
-   want the coding agent off the defaults:
+5. **Template variables** (each exposed as an env var): this layer is for
+   genuinely org-wide, NON-secret config every session should share — per
+   the table up top, anything baked in here is usable by the whole
+   workspace, so never keys or tokens. One the warmup script reads, plus
+   two optional Claude Code knobs:
 
    | Key | Example value | Effect |
    |---|---|---|
-   | `ANTHROPIC_MODEL` | `opus[1m]` | which model Claude Code runs in the box |
-   | `CLAUDE_CODE_EFFORT_LEVEL` | `xhigh` | its reasoning effort |
+   | `GITHUB_ORG` (recommended) | `acme` | your GitHub org name — the warmup scopes the coding agent's pre-approved install/build/test trust to repos cloned from this org; unset → that allow rule is skipped |
+   | `ANTHROPIC_MODEL` (optional) | `opus[1m]` | which model Claude Code runs in the box |
+   | `CLAUDE_CODE_EFFORT_LEVEL` (optional) | `xhigh` | its reasoning effort |
 
 Sessions snapshot the template at create time, so editing the template later
 never changes already-running sessions.
@@ -138,11 +140,13 @@ Runs once, when a session is created. This is where the box's own guardrails
 are installed — the pinned host keys, the git-only policy, and the deny hook
 that keeps the coding agent off the GitHub API.
 
-The full script is **[`docs/warmup.sh`](warmup.sh)**.
-⚠️ It needs **one edit** before pasting: replace `your-github-org` in the
-auto-mode allow rule (marked at the top of the file) with your GitHub org —
-that rule scopes the pre-approved install/build/test trust to repos cloned
-from your own org.
+The full script is **[`docs/warmup.sh`](warmup.sh)** — paste it as-is;
+there is nothing to edit inside. Everything org-specific reaches it as env
+vars declared on the template: the three session inputs, and the
+`GITHUB_ORG` template variable (step 3, item 5), which scopes the
+pre-approved install/build/test trust to repos cloned from your own org
+(left unset, that allow rule is simply skipped and the agent gets no
+pre-approved clone-and-build trust).
 
 Why the fussy details in it are there:
 
@@ -163,11 +167,12 @@ Why the fussy details in it are there:
   a permission prompt is a hung agent (the orchestrator talks to it over
   tmux, it doesn't click Yes for it). Auto mode is safe to grant *here*
   because everything dangerous was already taken away from the box; the
-  allow rule then keeps the pre-approved install/build/test trust confined
-  to repos from your own org. (To pin the coding agent's model or effort,
-  prefer the `ANTHROPIC_MODEL` / `CLAUDE_CODE_EFFORT_LEVEL` template
-  variables from step 3 over editing this script — they're visible and
-  editable in the template UI.)
+  allow rule (built from `GITHUB_ORG`) then keeps the pre-approved
+  install/build/test trust confined to repos from your own org. (All the
+  script's knobs — `GITHUB_ORG`, `ANTHROPIC_MODEL`,
+  `CLAUDE_CODE_EFFORT_LEVEL` — are template variables from step 3, visible
+  and editable in the template UI; the script itself never needs editing
+  for per-org config.)
 
 ## Step 4 — test it once by hand
 
@@ -176,8 +181,8 @@ UI: pick the template, let the three inputs fill from your saved inputs
 (select them if the UI doesn't preselect), and set a trivial AI prompt like
 *"clone <your scratch repo> and summarize its README in the terminal"*. Then:
 
-- watch the warmup log for the three `[warmup]` echo lines (identity, url
-  rewrite, jq);
+- watch the warmup log for the `[warmup]` echo lines (identity, url
+  rewrite, jq, the org-scoped allow rule);
 - open the web terminal and check Claude Code is running in tmux
   (`tmux list-sessions`) — and that it is actually working, not sitting at a
   "Do you want to proceed?" approval prompt (if it is, the auto-mode settings
@@ -217,3 +222,4 @@ so there is nothing to supply per task.
 | `git clone` host-key errors | GitHub rotated its host keys — refresh the pinned `known_hosts` block in the warmup from `https://api.github.com/meta` and update the template. |
 | warmup log says `jq: MISSING` | The stack image lacks `jq`; install it in the warmup before the deny-hook block (the hook fails closed without it, denying every Bash call). |
 | coding agent sits at a `Do you want to proceed?` prompt | The auto-mode settings never applied — the session was created from an older template version, or the settings jq failed. Update the template's warmup to the current script (sessions snapshot the template, so create a NEW session) and check `cat ~/.claude/settings.json` in the web terminal for `"defaultMode": "auto"`. |
+| agent asks permission before `npm install` / build / test on a fresh clone | The `GITHUB_ORG` template variable is unset (the warmup log says so) or doesn't match the org the repo was cloned from — set it on the template and create a new session. |
