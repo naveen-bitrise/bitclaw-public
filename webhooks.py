@@ -62,8 +62,9 @@ def _extract_pr_ref(event: str, payload: dict) -> tuple[str, int] | None:
             return (repo, prs[0]["number"])
 
     if event == "status":
-        # `status` doesn't carry pull_requests; would need an API lookup by SHA.
-        # Skip until we wire that up.
+        # `status` events carry no PR reference — resolving one would need an
+        # API lookup by commit SHA. Deliberately unsupported: the PR-referencing
+        # events above already cover the CI signals bitclaw routes.
         return None
 
     return None

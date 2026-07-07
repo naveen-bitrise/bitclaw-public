@@ -119,7 +119,8 @@ For review/CI events to flow back, GitHub must reach
 `http://<host>:8080/webhooks/github` — for local development a tunnel such
 as `ngrok http 8080` works. Point an org or repo webhook there (content type
 JSON, your HMAC secret, events: pull requests, issue comments, PR reviews
-and review comments, check runs, workflow runs). Now the bot opens the PR
+and review comments, check runs, check suites, workflow runs). Now the bot
+opens the PR
 itself, relays vetted review comments to the coding agent, and on a public
 repo every write comes to Slack as an Approve/Reject button first.
 
@@ -276,7 +277,7 @@ under new keys freely; never rename these three.
 | `mcp_manager.py` | Loads `.mcp.json`, resolves `$VAR` references from the environment, skips misconfigured servers with a loud error |
 | `http_client.py` | One shared `aiohttp` session for direct API calls |
 | `tools/slack_tools.py` | In-process MCP server: `post_message`, `update_message`, `register_anchor`, `set_status`, `list_anchors`, `close_session` |
-| `tools/scheduling.py` | In-process MCP server: `schedule_message` — durable self-wake-ups delivered into the same session's inbox |
+| `tools/scheduling.py` | In-process MCP server: `schedule_message`, `check_scheduled_task`, `cancel_scheduled_task` — durable self-wake-ups delivered into the same session's inbox |
 | `tools/hooks.py` | PreToolUse / PostToolUse guardrails: GitHub tool denies, the read redaction filter, the public-repo egress gate, RDE-create validators |
 | `tools/egress.py` | `EgressApprovalRegistry`: public-repo GitHub writes parked for human approval, bound to a content hash |
 
@@ -540,7 +541,8 @@ For a while there was literally no way to stop a runaway multi-turn task:
 the session worker drains its inbox sequentially, so a "stop" message queued
 *behind the very turn it was meant to kill*. The fix makes stop a control
 command, not agent input. A human reply whose whole message is a stop word
-(`stop`, `/stop`, `abort`) is detected in `main.py` and routed around the
+(`stop`, `/stop`, `abort`, and similar variants) is detected in `main.py`
+and routed around the
 inbox entirely: flush the queue, cancel the session's scheduled wake-ups,
 send the SDK's graceful interrupt, and escalate to teardown after a grace
 period if the turn won't die. (It's a message-text trigger, not a Slack slash

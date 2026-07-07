@@ -40,6 +40,9 @@ RUN apt-get update \
 
 # uv (package manager) + a non-root user. The user needs a REAL home dir:
 # without one HOME resolves to "/" and every tool wanting $HOME/.cache fails.
+# uv:latest is fine for the same reason as the Go @latest above: the published
+# image tag is the pin (resolved once, at build time), and dependency versions
+# themselves come from the committed lockfile, not from uv.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 RUN useradd --create-home --shell /bin/sh app
 ENV HOME=/home/app PATH="/home/app/bin:${PATH}" PYTHONUNBUFFERED=1
@@ -66,11 +69,12 @@ RUN chown app:app /app
 USER app
 
 # Install deps first for layer caching (from the committed lockfile, so the
-# image gets the exact pinned versions), then the app itself.
+# image gets the exact pinned versions), then copy the app itself. No second
+# sync after the copy: the project is never installed as a package
+# ([tool.uv] package = false) — modules import straight from /app.
 COPY --chown=app:app pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY --chown=app:app . .
-RUN uv sync --frozen --no-dev
 # Bake the example MCP config in as the default, so the prebuilt image runs
 # with zero mounted files: it contains only $VAR references (no secrets),
 # resolved from the environment at runtime — servers whose vars are unset are

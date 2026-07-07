@@ -168,11 +168,11 @@ Why the fussy details in it are there:
   tmux, it doesn't click Yes for it). Auto mode is safe to grant *here*
   because everything dangerous was already taken away from the box; the
   allow rule (built from `GITHUB_ORG`) then keeps the pre-approved
-  install/build/test trust confined to repos from your own org. (All the
-  script's knobs — `GITHUB_ORG`, `ANTHROPIC_MODEL`,
-  `CLAUDE_CODE_EFFORT_LEVEL` — are template variables from step 3, visible
-  and editable in the template UI; the script itself never needs editing
-  for per-org config.)
+  install/build/test trust confined to repos from your own org. (All
+  per-org config lives in step 3's template variables, visible and editable
+  in the template UI — the script reads `GITHUB_ORG`, while Claude Code
+  itself picks up `ANTHROPIC_MODEL` / `CLAUDE_CODE_EFFORT_LEVEL` from the
+  session env. The script never needs editing.)
 
 ## Step 4 — test it once by hand
 

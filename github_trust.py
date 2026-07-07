@@ -400,8 +400,9 @@ class PullRequestTrustChecker:
     ingress and the read filter, so 'trusted' means one thing everywhere.
     """
 
-    def __init__(self, token, org_member_check, self_login=None,
-                 allowed_org=None, ttl=3600.0):
+    def __init__(self, token: str | None, org_member_check,
+                 self_login: str | None = None,
+                 allowed_org: str | None = None, ttl: float = 3600.0):
         self._token = token
         self._check = org_member_check
         self._self_login = self_login
@@ -412,7 +413,8 @@ class PullRequestTrustChecker:
         self._ttl = ttl
         self._cache: dict[str, tuple[float, bool]] = {}
 
-    async def is_trusted(self, owner, repo, number) -> bool | None:
+    async def is_trusted(self, owner: str | None, repo: str | None,
+                         number: int | None) -> bool | None:
         if not (owner and repo and number is not None):
             return None
         key = f"{owner}/{repo}#{number}"

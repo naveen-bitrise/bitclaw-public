@@ -2,6 +2,9 @@
 name = "bitclaw"
 version = "0.1.0"
 description = "Slack ↔ Claude agent orchestrator backed by Bitrise Remote Dev Environments (reference implementation)"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Bitrise Ltd." }]
 requires-python = ">=3.11"
 dependencies = [
     "slack-bolt>=1.21",
@@ -10,6 +13,9 @@ dependencies = [
     "aiosqlite>=0.20",
     "python-dotenv>=1.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/bitrise-io/bitclaw-public"
 
 [dependency-groups]
 dev = [
