@@ -1,6 +1,6 @@
 # bitclaw
 
-[![ci](https://github.com/bitrise-io/bitclaw-public/actions/workflows/ci.yml/badge.svg)](https://github.com/bitrise-io/bitclaw-public/actions/workflows/ci.yml)
+[![CI on Bitrise](https://img.shields.io/badge/CI-Bitrise-683D87?logo=bitrise&logoColor=white)](https://bitrise.io)
 
 A reference implementation of a **Slack-native AI engineering agent**: a Python
 async bot that listens to Slack, routes every thread to a persistent Claude
@@ -61,12 +61,13 @@ docker run -it --rm \
   -e SLACK_BOT_TOKEN=xoxb-your-bot-token \
   -e SLACK_APP_TOKEN=xapp-your-app-token \
   -e ANTHROPIC_API_KEY=sk-ant-your-api-key \
-  ghcr.io/bitrise-io/bitclaw-public:latest
+  bitriseio/bitclaw-public:latest
 ```
 
-   (The image is published by this repo's CI; to build locally instead:
-   `docker build -t bitclaw-public .` and use `bitclaw-public` as the image
-   name. The two
+   (The image is built and published to Docker Hub by this repo's own
+   Bitrise CI — naturally; the CI config is stored on the Bitrise app rather
+   than in-repo. To build locally instead: `docker build -t bitclaw-public .`
+   and use `bitclaw-public` as the image name. The two
    volumes persist the SQLite database — the image defaults `DB_PATH` to
    `/data/bitclaw.db` — and the conversation files that `--resume` replays,
    so the bot keeps its memory across restarts.)
