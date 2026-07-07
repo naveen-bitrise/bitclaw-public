@@ -185,11 +185,12 @@ docker run -it --rm \
   -e SLACK_BOT_TOKEN=xoxb-your-bot-token \
   -e SLACK_APP_TOKEN=xapp-your-app-token \
   -e ANTHROPIC_API_KEY=sk-ant-your-api-key \
-  ghcr.io/bitrise-io/bitclaw:latest
+  ghcr.io/bitrise-io/bitclaw-public:latest
 ```
 
    (The image is published by this repo's CI; to build locally instead:
-   `docker build -t bitclaw .` and use `bitclaw` as the image name. The two
+   `docker build -t bitclaw-public .` and use `bitclaw-public` as the image
+   name. The two
    volumes persist the SQLite database — the image defaults `DB_PATH` to
    `/data/bitclaw.db` — and the conversation files that `--resume` replays,
    so the bot keeps its memory across restarts.)
@@ -199,9 +200,9 @@ docker run -it --rm \
 
 ### Step 2 — give it hands (this is the reason this repo exists)
 
-You need a **Bitrise workspace with RDE access** (RDE is in beta —
-[contact Bitrise](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview)
-if your workspace doesn't have it) and a
+You need a **Bitrise workspace with RDE access**
+([overview and access details](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview))
+and a
 [personal access token](https://app.bitrise.io/me/account/security). Then
 build the **coding-agent template** once, following
 [docs/rde-template.md](docs/rde-template.md) — a ~10-minute checklist (four
@@ -629,7 +630,7 @@ implementation:
 
 **Bitrise RDE** (the coding-agent substrate):
 
-- [RDE overview](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview) — what it is, beta access
+- [RDE overview](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview) — what it is, how to get access
 - [Key concepts](https://docs.bitrise.io/en/bitrise-rde/getting-started/key-concepts) — sessions, lifecycle, templates, saved inputs
 - [The RDE MCP server](https://docs.bitrise.io/en/bitrise-rde/ways-to-use-rde/bitrise-rde-mcp-server) — hosted vs local binary, auth
 - [Templates](https://docs.bitrise.io/en/bitrise-rde/configuration/templates) — warmup/startup scripts, variables vs session inputs

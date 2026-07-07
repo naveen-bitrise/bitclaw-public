@@ -6,6 +6,14 @@ id goes into `RDE_TEMPLATE_ID`, and a PreToolUse hook refuses any
 `bitrise_devenv_create` call that names a different template (or none) — the
 orchestrator can never improvise an environment.
 
+Why a disposable VM instead of just giving the orchestrator a shell: the coding
+agent needs Bash, file access, and its own GitHub credential to actually work —
+capabilities the [security model](../README.md#security-model--lessons-from-production)
+deliberately keeps off the bot host. An RDE gives it all of that on a box that
+is git-only, has no GitHub API credential, and is thrown away when the task
+ends — so the blast radius of a fully capable coding agent is one disposable
+sandbox, not the orchestrator's own host.
+
 This is a one-time setup, roughly **10 minutes**. Follow the steps in order;
 each says exactly what to create and where.
 
@@ -301,6 +309,12 @@ UI: pick the template, let the three inputs fill from your saved inputs
 - confirm the clone worked over SSH (`ls`, `git -C <repo> remote -v`).
 
 Terminate and delete the session when done.
+
+Note bitclaw's own cleanup terminates the RDE when a PR closes — but that path
+can fail to run (a crash, a missed webhook). RDE's own `auto_terminate_minutes`
+(defaults to 5 days) is an independent safety net so an abandoned session
+doesn't run forever regardless; lower it on the template if you want a tighter
+bound.
 
 ## Step 5 — wire it up
 
