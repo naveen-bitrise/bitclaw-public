@@ -250,7 +250,7 @@ bootstraps its own Slack thread, and comments/transitions route back to it.
 ### Running from source
 
 ```bash
-git clone <this repo> && cd bitclaw
+git clone <this repo> && cd bitclaw-public
 
 cp .env.example .env          # same tiers — fill in what your step needs
 cp .mcp.json.example .mcp.json
@@ -267,7 +267,16 @@ uv run python main.py
 
 **Notes:** integrations whose env vars are unset are simply disabled — the
 startup log prints a capability summary saying what's off and which var
-enables it. The live status indicator ("watching CI…") uses Slack's
+enables it.
+
+⚠️ The server keys in `.mcp.json` — `github`, `infra`, `atlassian` — are
+**load-bearing, not labels**. The capability-tier prompt sections, the infra
+tool allowlist, and the PreToolUse security hooks all match on
+`mcp__<key>__…` tool names. Renaming `infra` to, say, `rde` does not relabel
+the server — it silently downgrades it from a positive tool allowlist to the
+generic wildcard allow and detaches every RDE guardrail (the template pin,
+the `ai_prompt` requirement, the `include_secrets` denies). Add *new* servers
+under new keys freely; never rename these three. The live status indicator ("watching CI…") uses Slack's
 `assistant.threads.setStatus`; depending on your workspace and app
 configuration you may need the app's *Agents & AI Apps* feature toggled on
 for statuses to render — every status call is best-effort, so the bot works
@@ -621,6 +630,13 @@ implementation:
   prompt-rule changes need a one-shot in-band memo to reach in-flight sessions.
 - **Bounded recovery concurrency** — restart recovery here fires past-due
   scheduled messages sequentially; production bounds the stampede.
+- **Reporter identity resolution** — production resolves a Jira ticket's
+  reporter to their Slack account and GitHub login (to @-mention them in the
+  bootstrapped thread and request their PR review). It takes a direct Jira
+  REST client, two more Slack scopes (`users:read`, `users:read.email`), a
+  persistent cache, and fuzzy email/display-name matching — and misresolved
+  identities ping the wrong person. Here a ticket's thread simply starts
+  without tagging anyone.
 - **Log shipping** — structured JSON logs with severity fields for a log
   platform; this repo logs plain text to stdout.
 
@@ -632,7 +648,7 @@ implementation:
 
 - [RDE overview](https://docs.bitrise.io/en/bitrise-rde/getting-started/remote-dev-environments-overview) — what it is, how to get access
 - [Key concepts](https://docs.bitrise.io/en/bitrise-rde/getting-started/key-concepts) — sessions, lifecycle, templates, saved inputs
-- [The RDE MCP server](https://docs.bitrise.io/en/bitrise-rde/ways-to-use-rde/bitrise-rde-mcp-server) — hosted vs local binary, auth
+- [The RDE MCP server](https://docs.bitrise.io/en/bitrise-rde/rde-options/bitrise-rde-mcp-server) — hosted vs local binary, auth
 - [Templates](https://docs.bitrise.io/en/bitrise-rde/configuration/templates) — warmup/startup scripts, variables vs session inputs
 - [Saved inputs](https://docs.bitrise.io/en/bitrise-rde/configuration/saved-inputs) — account-scoped credentials, Claude Code credential
 

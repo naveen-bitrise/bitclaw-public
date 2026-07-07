@@ -195,9 +195,6 @@ class SlackGateway:
         # click's request id to its owning session and enqueues the cue.
         self._egress = EgressApprovalRegistry()
 
-    async def close(self) -> None:
-        """Release process-wide resources. Currently a no-op placeholder."""
-
     # ------------------------------------------------------------------
     # Public delivery API
     # ------------------------------------------------------------------
