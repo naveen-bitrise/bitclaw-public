@@ -84,9 +84,10 @@ chmod +x "$HOME/bin/shopfront-verify.sh"
 
 cat > "$HOME/CLAUDE.md" <<'EOF'
 # General
-- Git is preconfigured: an SSH key authenticates you to GitHub and every
-  https://github.com/ URL is rewritten to SSH. Never create forks. If a push
-  fails with a permission error, STOP and report it in the terminal.
+- Git is preconfigured for GitHub: the session's GitHub credential helper
+  (or an SSH key when one is installed) lets you clone and push. Never create
+  forks. If a push fails with a permission error, STOP and report it in the
+  terminal.
 - The Shopfront app repo is ALREADY cloned at ~/shopfront on main with
   node_modules, Pods and a Release simulator build in place. Work there; do
   not re-clone it.

@@ -8,7 +8,7 @@ on Bitrise RDE (branch `shopfront-demo`; not for upstream main).
 | Hook | What it does |
 |---|---|
 | On create (pool) | Shopfront clone + `npm ci` + prebuild + pods + Release sim build, background installer, then [`on-create-agent.sh`](on-create-agent.sh): deny-GitHub-API hook, Claude auto mode + `GITHUB_ORG` allow rule, `~/bin/shopfront-verify.sh`, `~/CLAUDE.md` with the inner loop. No secrets. |
-| On claim (claimant) | [`on-claim.sh`](on-claim.sh): git identity, SSH push key, pinned host keys, https→ssh rewrite. Log: `~/bitclaw-setup.log`. |
+| On claim (claimant) | [`on-claim.sh`](on-claim.sh): git identity, a push check, and an optional SSH-key override. Log: `~/bitclaw-setup.log`. |
 | On restore | Re-runs the background installer. |
 
 Session inputs (scope `on_claim`, optional, not exposed in the terminal):
@@ -33,13 +33,23 @@ RDE_AGENT_BRIEF=Follow the "Inner loop" section of ~/CLAUDE.md exactly: typechec
 GITHUB_ALLOWED_ORG=naveen-bitrise
 ```
 
-## Still to do by hand
+## GitHub access in the RDE
 
-1. Push key: `ssh-keygen -t ed25519 -f bitclaw_ed25519 -N ""`, add the `.pub`
-   as a **deploy key with write access** on `bitrise-shopfront`, then save
-   `base64 < bitclaw_ed25519 | tr -d '\n'` as secret saved input
-   `GIT_SSH_KEY_B64` on the account that owns `BITRISE_TOKEN`. Optional saved
-   input `GIT_USER_NAME`.
-2. Quota: the workspace has 12 m2pro vCPUs standalone; the pool (6) plus one
-   claimed session (6) uses all of it, so a second concurrent task falls back
-   to a cold create that will be refused. Delete idle claimed sessions.
+No SSH key is needed. The claimant's connected GitHub App is applied by the
+platform's personalize step (before On claim): git gets a credential helper
+(`~/.local/bin/bitrise-git-credential`) and `gh` is logged in with a `ghu_`
+user token as `naveen-bitrise`. Verified 2026-11-01: `git push --dry-run` of a
+new branch to `bitrise-shopfront` succeeds on a fresh pool claim.
+
+Trade-offs versus bitclaw's original git-only design:
+- Pushes and commits act as your GitHub account, not a bot.
+- The token also grants GitHub API access in the box. The deny hook still
+  blocks `gh` and `api.github.com` in the agent's Bash, but the credential is
+  reachable, so treat the RDE as able to act on GitHub as you. Fine for a
+  demo; use a machine-user SSH key (`GIT_SSH_KEY_B64`) to go back to git-only.
+
+## Quota
+
+The workspace has 12 m2pro vCPUs standalone; the pool (6) plus one claimed
+session (6) uses all of it, so a second concurrent task falls back to a cold
+create that will be refused. Delete idle claimed sessions.
