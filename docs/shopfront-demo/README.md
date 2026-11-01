@@ -12,7 +12,7 @@ on Bitrise RDE (branch `shopfront-demo`; not for upstream main).
 | On restore | Re-runs the background installer. |
 
 Session inputs (scope `on_claim`, optional, not exposed in the terminal):
-`GIT_SSH_KEY_B64` (default `unset` = no push), `GIT_USER_EMAIL`, `GIT_USER_NAME`.
+`GIT_SSH_KEY_B64` (default `unset` = use the platform's GitHub credential), `GIT_USER_EMAIL`, `GIT_USER_NAME`.
 Template variable `GITHUB_ORG=naveen-bitrise` (scope `on_create`).
 
 Verified 2026-11-01 with a warm-pool claim using `ai_prompt` +
