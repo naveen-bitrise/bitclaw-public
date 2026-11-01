@@ -8,11 +8,11 @@ on Bitrise RDE (branch `shopfront-demo`; not for upstream main).
 | Hook | What it does |
 |---|---|
 | On create (pool) | Shopfront clone + `npm ci` + prebuild + pods + Release sim build, background installer, then [`on-create-agent.sh`](on-create-agent.sh): deny-GitHub-API hook, Claude auto mode + `GITHUB_ORG` allow rule, `~/bin/shopfront-verify.sh`, `~/CLAUDE.md` with the inner loop. No secrets. |
-| On claim (claimant) | [`on-claim.sh`](on-claim.sh): git identity, a push check, and an optional SSH-key override. Log: `~/bitclaw-setup.log`. |
-| On restore | Re-runs the background installer. |
+| On claim (claimant) | [`on-claim.sh`](on-claim.sh): git identity; with `GIT_SSH_KEY_B64` set, removes the platform's GitHub App credential and installs the deploy key (SSH-only mode); push check. Log: `~/bitclaw-setup.log`. |
+| On restore | Re-applies the GitHub App removal in SSH-only mode, then re-runs the background installer. |
 
 Session inputs (scope `on_claim`, optional, not exposed in the terminal):
-`GIT_SSH_KEY_B64` (default `unset` = use the platform's GitHub credential), `GIT_USER_EMAIL`, `GIT_USER_NAME`.
+`GIT_SSH_KEY_B64` (set = SSH-only mode; default `unset` = keep the platform's GitHub App credential), `GIT_USER_EMAIL`, `GIT_USER_NAME`.
 Template variable `GITHUB_ORG=naveen-bitrise` (scope `on_create`).
 
 Verified 2026-11-01 with a warm-pool claim using `ai_prompt` +
@@ -35,18 +35,37 @@ GITHUB_ALLOWED_ORG=naveen-bitrise
 
 ## GitHub access in the RDE
 
-No SSH key is needed. The claimant's connected GitHub App is applied by the
-platform's personalize step (before On claim): git gets a credential helper
-(`~/.local/bin/bitrise-git-credential`) and `gh` is logged in with a `ghu_`
-user token as `naveen-bitrise`. Verified 2026-11-01: `git push --dry-run` of a
-new branch to `bitrise-shopfront` succeeds on a fresh pool claim.
+Two GitHub credentials are involved, and they are separate:
+- **Orchestrator (bitclaw):** `GITHUB_TOKEN` in bitclaw's `.env`, used by its
+  GitHub MCP to open PRs, read reviews and merge. Never enters the RDE.
+- **Coding agent (RDE):** git push only, from a repo **deploy key**.
 
-Trade-offs versus bitclaw's original git-only design:
-- Pushes and commits act as your GitHub account, not a bot.
-- The token also grants GitHub API access in the box. The deny hook still
-  blocks `gh` and `api.github.com` in the agent's Bash, but the credential is
-  reachable, so treat the RDE as able to act on GitHub as you. Fine for a
-  demo; use a machine-user SSH key (`GIT_SSH_KEY_B64`) to go back to git-only.
+The platform's personalize step logs git and `gh` in with the claimant's
+GitHub App user token (`naveen-bitrise`). That token can also call the GitHub
+API as you, so the agent runs in **SSH-only mode**: when `GIT_SSH_KEY_B64` is
+set, On claim removes the GitHub App credential (verified 2026-11-01 by hand:
+afterwards `gh` is logged out, an HTTPS push fails, public reads still work):
+- `~/.config/bitrise/git-credential.env` (token + refresh URL + refresh secret)
+- the `credential.https://github.com.helper` git config
+- `gh`'s login (hosts.yml + `gh:github.com` keychain item)
+
+### Set up the deploy key (once, on your laptop)
+
+```bash
+ssh-keygen -t ed25519 -f bitclaw_deploy -N "" -C "bitclaw-shopfront"
+# GitHub → naveen-bitrise/bitrise-shopfront → Settings → Deploy keys → Add:
+#   paste bitclaw_deploy.pub, tick "Allow write access"
+base64 < bitclaw_deploy | tr -d '\n' | pbcopy
+# Bitrise → Remote Dev Environments → Saved inputs → New:
+#   key GIT_SSH_KEY_B64, secret, paste; then delete the local key files
+```
+
+Then claim a session: `~/bitclaw-setup.log` should show `mode: SSH deploy key
+only`, `gh: logged-out` and `push check: OK`.
+
+Not yet verified: whether personalize re-installs the GitHub App credential
+on a restore *after* On restore runs (On restore re-scrubs, but ordering is
+unconfirmed). Check `gh auth status` after the first restore.
 
 ## Quota
 
