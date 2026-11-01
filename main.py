@@ -287,6 +287,17 @@ async def on_message(event, client):
     # Compute is_mention on the RAW text (before we attribute) — the trigger is
     # the bot's own id in the message, never the sender's.
     is_mention = _bot_user_id and f"<@{_bot_user_id}>" in text
+    # Alert channels (AUTO_TRIGGER_CHANNELS): a TOP-LEVEL post from another
+    # bot/integration there (e.g. a Sentry alert) starts a session as if it
+    # had @-mentioned bitclaw. Humans in those channels still @-mention.
+    if (
+        not is_mention
+        and not thread_ts
+        and not event.get("user")
+        and event.get("bot_id")
+        and event.get("channel") in _auto_trigger_channels()
+    ):
+        is_mention = True
 
     # User stop ("stop" / "/stop" / "@bitclaw stop" as the WHOLE message) is a
     # control command, not agent input: enqueueing it would park it behind the
@@ -352,6 +363,13 @@ async def on_app_mention():
     # @mentions fire as both app_mention and message. on_message handles them;
     # this handler exists only to suppress Bolt's "unhandled request" warning.
     pass
+
+
+def _auto_trigger_channels() -> frozenset[str]:
+    """Channel IDs (comma-separated AUTO_TRIGGER_CHANNELS) where top-level
+    integration posts start a session without an @-mention."""
+    raw = os.environ.get("AUTO_TRIGGER_CHANNELS", "")
+    return frozenset(c.strip() for c in raw.split(",") if c.strip())
 
 
 def _is_bot_event(event: dict) -> bool:

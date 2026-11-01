@@ -59,6 +59,19 @@ def pinned_rde_template_id() -> str | None:
     return value.strip() or None
 
 
+def pinned_rde_warm_pool_id() -> str | None:
+    """Optional warm pool of the pinned template, from RDE_WARM_POOL_ID.
+
+    When set, bitclaw claims a pre-booted session from this pool instead of
+    cold-creating from the template (a claim falls back to a cold create from
+    the pool's configuration when the pool is empty, so it always succeeds).
+    The operator must point it at a pool built FROM RDE_TEMPLATE_ID — the pool
+    fixes the template, so the hook can't re-check that per call.
+    """
+    value = os.environ.get("RDE_WARM_POOL_ID", "")
+    return value.strip() or None
+
+
 # --- GitHub MCP tool denial (bitclaw is an orchestrator, NOT a coder) ---
 #
 # The github-mcp-server is toolset-scoped in .mcp.json (context, issues,
@@ -320,7 +333,35 @@ async def require_pinned_template_on_devenv_create(input, tool_use_id, context):
     # lenient check would still reach the server padded. Requiring the exact id
     # keeps "passes the hook" identical to "what gets sent". Padded/blank/other
     # ids are denied and the LLM retries with the verbatim id.
-    template_id = (input.get("tool_input") or {}).get("template_id")
+    tool_input = input.get("tool_input") or {}
+    template_id = tool_input.get("template_id")
+    warm_pool_id = tool_input.get("warm_pool_id")
+    pool = pinned_rde_warm_pool_id()
+
+    if warm_pool_id is not None:
+        # A claim names the pool and NO template (the pool fixes it). Only the
+        # operator-pinned pool may be claimed from.
+        if pool is not None and warm_pool_id == pool and not template_id:
+            return {}
+        logger.warning(
+            "blocked %s: warm_pool_id=%r is not the pinned pool (tool_use_id=%s)",
+            _DEVENV_CREATE_TOOL, warm_pool_id, tool_use_id,
+        )
+        allowed = (
+            f"claim from warm_pool_id {pool} (and pass NO template_id)"
+            if pool else
+            f"create from template_id {pinned} (no warm pool is configured)"
+        )
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    f"bitclaw may only {allowed}. Retry with exactly that."
+                ),
+            }
+        }
+
     if template_id == pinned:
         return {}
 

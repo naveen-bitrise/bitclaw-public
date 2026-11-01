@@ -119,13 +119,14 @@ Creating the RDE (the disposable cloud dev environment the coding agent runs in)
 - %%RDE_TEMPLATE_RULE%%
 - You MUST know which REPOSITORY the work targets BEFORE creating the session — the repo is context you hand the coding agent in the ai_prompt, not a template input. If you don't have it, DO NOT create the session — ask the human in Slack and wait. %%RDE_VISIBILITY%%
 - You MUST pass `ai_prompt` on create (the call is rejected in code without it — without ai_prompt no coding agent boots in tmux and every later send-keys is a silent no-op). The ai_prompt is the agent's bootstrap brief and must be SELF-CONTAINED — the RDE has no Jira/Slack credentials to fetch context later. Include:
-  1. The target repository and an explicit clone instruction ("git clone github.com/<owner>/<repo> and work there" — always `git clone`, never `gh repo clone`; git is its ONLY GitHub interface).
+  1. %%RDE_CLONE_ITEM%%
   2. The ticket id + link, and the ticket title/description/acceptance criteria copied VERBATIM. If you don't have these yet, DO NOT create the RDE — ask the human and wait.
   3. Branch rules: it works on its OWN new branch and must NEVER commit or push to the default branch; %%RDE_PR_FLOW%%
   4. The "Never block on input …" guardrail verbatim (see "Orchestrator, not a coder").
-  5. %%RDE_HYGIENE_ITEM%%
+  5. %%RDE_HYGIENE_ITEM%%%%RDE_EXTRA_BRIEF%%
 - The template's session inputs (the coding agent's git SSH key and identity) fill themselves: every create you issue requests saved-input auto-mapping (injected in code), which matches the bot account's saved inputs to the template's inputs by key. Do NOT pass session_inputs values yourself. If create fails with "missing required input: <KEY>", that is an OPERATOR setup gap — a saved input named <KEY> is missing on the bot's Bitrise account (docs/rde-template.md) — so report it in the thread; don't retry or improvise values.
-- Immediately after create succeeds, call register_anchor(kind="rde_session", key="<the session_id returned by create>") so cleanup paths can find it. The coding agent runs in a tmux session named `claude-<session_id>` — construct that name from the session_id you already have; don't discover it."""
+- Immediately after create succeeds, call register_anchor(kind="rde_session", key="<the session_id returned by create>") so cleanup paths can find it. The coding agent runs in a tmux session named `claude-<session_id>` — construct that name from the session_id you already have; don't discover it.
+- If the session has a virtual device (the create/get response carries `device`), post its `device.page_url` in the thread as "📱 Live simulator: <url>" once mcp__infra__bitrise_devenv_get shows it, and put the same link in the PR description under a "Try it" line. Never post an RDE web-terminal or remote-access link.%%RDE_LIFECYCLE%%"""
 
 _PROMPT_PUBLIC_PRIVATE = """\
 Public vs private repositories — keep internal details out of public artifacts:
@@ -293,7 +294,19 @@ def _build_system_prompt(server_names) -> str:
 
     if has_infra:
         template_id = os.environ.get("RDE_TEMPLATE_ID") or None
-        if template_id:
+        warm_pool_id = (os.environ.get("RDE_WARM_POOL_ID") or "").strip() or None
+        if template_id and warm_pool_id:
+            rde_template_rule = (
+                f"ALWAYS create the RDE by claiming from warm_pool_id "
+                f"`{warm_pool_id}` — a pool of pre-booted sessions of the one "
+                f"operator-pinned template `{template_id}`. Pass warm_pool_id "
+                "and NO template_id/stack_id/machine_type/device_spec (the pool "
+                "fixes them; enforced in code: any other pool or template is "
+                "denied). An empty pool falls back to a cold create on its own, "
+                "so never retry a claim as a template create. Never list, pick, "
+                "or author templates or pools."
+            )
+        elif template_id:
             rde_template_rule = (
                 f"ALWAYS create the RDE from template_id `{template_id}` — the "
                 "one operator-pinned template (enforced in code: any other "
@@ -350,9 +363,48 @@ def _build_system_prompt(server_names) -> str:
                 "hostnames, or coworker names in commit messages or the branch "
                 "name."
             )
+        repo_dir = (os.environ.get("RDE_REPO_DIR") or "").strip()
+        if repo_dir:
+            rde_clone_item = (
+                f"The target repository and where it lives: the template has "
+                f"ALREADY cloned it (default branch, dependencies installed, "
+                f"app pre-built) at `{repo_dir}` — tell the agent to `cd "
+                f"{repo_dir}`, `git pull --ff-only`, and branch from there; "
+                "NEVER re-clone it (that throws away the warm build). Only for "
+                "a DIFFERENT repo: \"git clone github.com/<owner>/<repo> and "
+                "work there\" (always `git clone`, never `gh repo clone`; git "
+                "is its ONLY GitHub interface)."
+            )
+        else:
+            rde_clone_item = (
+                "The target repository and an explicit clone instruction "
+                "(\"git clone github.com/<owner>/<repo> and work there\" — "
+                "always `git clone`, never `gh repo clone`; git is its ONLY "
+                "GitHub interface)."
+            )
+        extra_brief = (os.environ.get("RDE_AGENT_BRIEF") or "").strip()
+        rde_extra_brief = (
+            "\n  6. This operator-required verification loop, VERBATIM — the "
+            "agent must complete it and print its evidence in the terminal "
+            "BEFORE it pushes and reports ready:\n     \"" + extra_brief + "\"\n"
+            "  Do NOT open the PR until the agent's terminal output shows that "
+            "evidence; when you open it, summarize the evidence in the PR "
+            "description and post it in the thread."
+        ) if extra_brief else ""
+        rde_lifecycle = (
+            "\n- A freshly created or claimed session may still be running its "
+            "setup hooks: execute is then refused with \"Session is setting "
+            "up\". That's expected — poll mcp__infra__bitrise_devenv_get until "
+            "`lifecycle.phase` is LIFECYCLE_PHASE_READY (a *_FAILED phase is "
+            "an operator problem: report it in the thread with the failing "
+            "hook name and stop)."
+        )
         parts.append(
             _PROMPT_RDE_CREATE
             .replace("%%RDE_TEMPLATE_RULE%%", rde_template_rule)
+            .replace("%%RDE_CLONE_ITEM%%", rde_clone_item)
+            .replace("%%RDE_EXTRA_BRIEF%%", rde_extra_brief)
+            .replace("%%RDE_LIFECYCLE%%", rde_lifecycle)
             .replace("%%RDE_VISIBILITY%%", rde_visibility)
             .replace("%%RDE_PR_FLOW%%", rde_pr_flow)
             .replace("%%RDE_HYGIENE_ITEM%%", rde_hygiene)

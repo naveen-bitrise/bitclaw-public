@@ -161,6 +161,43 @@ async def test_pinned_template_padded_or_other_id_denied(monkeypatch, template_i
     assert decision(result) == "deny"
 
 
+async def test_warm_pool_claim_of_pinned_pool_passes(monkeypatch):
+    monkeypatch.setenv("RDE_TEMPLATE_ID", "tmpl-approved")
+    monkeypatch.setenv("RDE_WARM_POOL_ID", "pool-approved")
+    result = await hooks.require_pinned_template_on_devenv_create(
+        hook_input(CREATE, {"warm_pool_id": "pool-approved"}), "t1", None
+    )
+    assert result == {}
+
+
+@pytest.mark.parametrize("pool_env,tool_input", [
+    (None, {"warm_pool_id": "pool-approved"}),             # no pool pinned
+    ("pool-approved", {"warm_pool_id": "pool-other"}),     # wrong pool
+    ("pool-approved", {"warm_pool_id": " pool-approved"}),  # padded
+    ("pool-approved", {"warm_pool_id": "pool-approved", "template_id": "tmpl-approved"}),
+])
+async def test_warm_pool_claim_other_or_unpinned_denied(monkeypatch, pool_env, tool_input):
+    monkeypatch.setenv("RDE_TEMPLATE_ID", "tmpl-approved")
+    if pool_env:
+        monkeypatch.setenv("RDE_WARM_POOL_ID", pool_env)
+    else:
+        monkeypatch.delenv("RDE_WARM_POOL_ID", raising=False)
+    result = await hooks.require_pinned_template_on_devenv_create(
+        hook_input(CREATE, tool_input), "t1", None
+    )
+    assert decision(result) == "deny"
+
+
+async def test_warm_pool_claim_denied_when_template_unset(monkeypatch):
+    """No pinned template still fails closed, even for a pinned pool."""
+    monkeypatch.delenv("RDE_TEMPLATE_ID", raising=False)
+    monkeypatch.setenv("RDE_WARM_POOL_ID", "pool-approved")
+    result = await hooks.require_pinned_template_on_devenv_create(
+        hook_input(CREATE, {"warm_pool_id": "pool-approved"}), "t1", None
+    )
+    assert decision(result) == "deny"
+
+
 async def test_devenv_hooks_ignore_other_tools(monkeypatch):
     """Each create-gate hook passes any other tool through untouched."""
     monkeypatch.delenv("RDE_TEMPLATE_ID", raising=False)

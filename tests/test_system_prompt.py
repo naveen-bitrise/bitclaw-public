@@ -108,3 +108,25 @@ def test_jira_server_without_host_degrades(monkeypatch):
     p = _build_system_prompt(FULL - {"github", "infra"} | {"atlassian"})
     assert "cloudId" not in p
     assert "Jira is not configured" in p
+
+
+def test_demo_knobs_unset_keep_default_prompt(full_env, monkeypatch):
+    for k in ("RDE_WARM_POOL_ID", "RDE_REPO_DIR", "RDE_AGENT_BRIEF"):
+        monkeypatch.delenv(k, raising=False)
+    p = _build_system_prompt(FULL)
+    assert "%%" not in p
+    assert "git clone github.com/<owner>/<repo> and work there" in p
+    assert "warm_pool_id" not in p
+    assert "verification loop" not in p
+    assert "device.page_url" in p
+
+
+def test_demo_knobs_set(full_env, monkeypatch):
+    monkeypatch.setenv("RDE_WARM_POOL_ID", "pool-7")
+    monkeypatch.setenv("RDE_REPO_DIR", "~/shopfront")
+    monkeypatch.setenv("RDE_AGENT_BRIEF", "run npm test and screenshot the simulator")
+    p = _build_system_prompt(FULL)
+    assert "%%" not in p
+    assert "warm_pool_id `pool-7`" in p and "tmpl-42" in p
+    assert "cd ~/shopfront" in p and "NEVER re-clone" in p
+    assert "run npm test and screenshot the simulator" in p
