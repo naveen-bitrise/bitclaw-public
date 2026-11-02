@@ -114,9 +114,9 @@ Restart bitclaw by hand over SSH: `~/bin/bitclaw-start.sh`. Watch it:
 `tmux attach -t bitclaw`.
 
 Tunnel: in Cloudflare Zero Trust → Networks → Tunnels, create tunnel
-`bitclaw`, add public hostname `bitclaw.<domain>` → `http://localhost:8080`,
+`bitclaw`, add public hostname `bitclaw.ashopfront.com` → `http://localhost:8080`,
 copy its token into `BITCLAW_CLOUDFLARE_TUNNEL_TOKEN`. GitHub webhook on
-`bitrise-shopfront`: `https://bitclaw.<domain>/webhooks/github`, content type
+`bitrise-shopfront`: `https://bitclaw.ashopfront.com/webhooks/github`, content type
 JSON, the webhook secret above, events: pull requests, PR reviews, PR review
 comments, issue comments, check runs/suites, workflow runs, statuses.
 
