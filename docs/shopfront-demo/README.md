@@ -72,3 +72,50 @@ unconfirmed). Check `gh auth status` after the first restore.
 The workspace has 12 m2pro vCPUs standalone; the pool (6) plus one claimed
 session (6) uses all of it, so a second concurrent task falls back to a cold
 create that will be refused. Delete idle claimed sessions.
+
+## Orchestrator host: RDE template `bitclaw-orchestrator` (390fed9d-2c47-49be-ade0-fbac3360cf78)
+
+bitclaw itself runs in its own Linux RDE session (`ubuntu-noble-24.04-bitrise-2025-base`,
+`g2.linux.amd-zen4.2c-8g`, 2 vCPU / 8 GB), from source, not Docker:
+
+| Hook | What it does |
+|---|---|
+| On create | Installs uv, Go, Node, cloudflared if missing; builds `github-mcp-server` and `bitrise-mcp-dev-environments` into `~/bin`; clones `BITCLAW_REPO_URL`@`BITCLAW_BRANCH` to `~/bitclaw`; `uv sync`; writes `~/bin/bitclaw-start.sh` and runs it. Script: [`orchestrator/on-create.sh`](orchestrator/on-create.sh). |
+| On restore | `git pull` + `uv sync`, then `bitclaw-start.sh` (so a stop/restore also deploys new commits). |
+
+`bitclaw-start.sh` writes `~/bitclaw/.env` (0600) from the inputs below and
+runs bitclaw and the tunnel in tmux sessions `bitclaw` and `tunnel`, each in a
+restart loop. Logs: `~/bitclaw.log`, `~/tunnel.log`, `~/bitclaw-host.log`.
+State: `~/bitclaw-data/` (SQLite + Claude session files) on the session's
+persistent disk.
+
+Secrets are **shared-scope session inputs, not exposed in the terminal**. Save
+them as secret saved inputs with these exact keys, then create the session with
+saved-input mapping:
+
+| Saved input | Required | Value |
+|---|---|---|
+| `BITCLAW_SLACK_BOT_TOKEN` | yes | `xoxb-…` from the demo Slack app |
+| `BITCLAW_SLACK_APP_TOKEN` | yes | `xapp-…` with `connections:write` |
+| `BITCLAW_BITRISE_TOKEN` | yes | Bitrise PAT (the account that claims coding RDEs) |
+| `BITCLAW_GITHUB_TOKEN` | yes | fine-grained PAT on `bitrise-shopfront` (see permissions above) |
+| `BITCLAW_GITHUB_WEBHOOK_SECRET` | yes | `openssl rand -hex 32`; same value in the GitHub webhook |
+| `BITCLAW_ANTHROPIC_API_KEY` | one of these two | Anthropic API key (preferred) |
+| `BITCLAW_CLAUDE_CODE_OAUTH_TOKEN` | | Claude Code OAuth token |
+| `BITCLAW_CLOUDFLARE_TUNNEL_TOKEN` | later | named-tunnel token from Cloudflare Zero Trust |
+
+Non-secret config lives in template variables (`BITRISE_WORKSPACE_ID`,
+`RDE_TEMPLATE_ID`, `RDE_WARM_POOL_ID`, `RDE_REPO_DIR`, `RDE_AGENT_BRIEF`,
+`GITHUB_ALLOWED_ORG`, `BITCLAW_REPO_URL`, `BITCLAW_BRANCH`); edit them on the
+template.
+
+Create the host with **auto-terminate off** (`auto_terminate_minutes: 0`).
+Restart bitclaw by hand over SSH: `~/bin/bitclaw-start.sh`. Watch it:
+`tmux attach -t bitclaw`.
+
+Tunnel: in Cloudflare Zero Trust → Networks → Tunnels, create tunnel
+`bitclaw`, add public hostname `bitclaw.<domain>` → `http://localhost:8080`,
+copy its token into `BITCLAW_CLOUDFLARE_TUNNEL_TOKEN`. GitHub webhook on
+`bitrise-shopfront`: `https://bitclaw.<domain>/webhooks/github`, content type
+JSON, the webhook secret above, events: pull requests, PR reviews, PR review
+comments, issue comments, check runs/suites, workflow runs, statuses.
