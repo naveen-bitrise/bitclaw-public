@@ -28,7 +28,7 @@ key is only needed later, so On claim is fine for it.
 RDE_TEMPLATE_ID=1ef3c02a-8933-4f2f-8e4a-5706bee3187b
 RDE_WARM_POOL_ID=6569df42-53d4-4c00-8fc3-d996c2aa5150   # omit for cold creates
 RDE_REPO_DIR=~/shopfront
-RDE_AGENT_BRIEF=Follow the "Inner loop" section of ~/CLAUDE.md exactly: typecheck + tests, ~/bin/shopfront-verify.sh on the simulator with screenshots of the changed screen, adversarial self-review of the full diff, CodePush-safety verdict, then print the EVIDENCE block. Do not push before every step passes.
+RDE_AGENT_BRIEF=Follow the "Inner loop" section of ~/CLAUDE.md exactly: typecheck + tests, ~/bin/shopfront-verify.sh on the simulator with screenshots of the changed screen, adversarial self-review of the full diff, a verdict on whether the change is CodePush-eligible (JS-only), then print the EVIDENCE block. Do not push before every step passes. Never publish a CodePush update or add a release label; releases happen in CI after merge.
 #AUTO_TRIGGER_CHANNELS=<Sentry alert channel id>
 GITHUB_ALLOWED_ORG=naveen-bitrise
 ```
