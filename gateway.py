@@ -720,6 +720,61 @@ class SlackGateway:
         return session_id
 
     # ------------------------------------------------------------------
+    # GlitchTip (error-monitoring alert) bootstrap
+    # ------------------------------------------------------------------
+
+    async def start_session_for_glitchtip_issue(
+        self,
+        issue_key: str,
+        title: str,
+        slack_client,
+        initial_user_message: str,
+    ) -> int | None:
+        """Bootstrap (or reuse) the session for one GlitchTip issue.
+
+        Anchored as ("glitchtip_issue", issue_key), so a repeat alert for the
+        same issue lands in the SAME thread instead of starting a second
+        session and a second coding RDE. A repeat for a session that was
+        closed is treated as a regression and reopens it with a cue. The
+        Slack thread is created by the agent's first post in
+        GLITCHTIP_ALERT_CHANNEL.
+        """
+        channel = os.environ.get("GLITCHTIP_ALERT_CHANNEL") or None
+        if not channel:
+            logger.error(
+                "GLITCHTIP_ALERT_CHANNEL not set — cannot open a thread for "
+                "GlitchTip issue %s", issue_key,
+            )
+            return None
+        session_id, created = await claim_or_create_session(
+            "glitchtip_issue", issue_key,
+            slack_channel=channel, slack_thread_ts=None,
+        )
+        if created:
+            logger.info("Created session %d for GlitchTip issue %s (%s)",
+                        session_id, issue_key, title)
+            if session_id not in self.sessions:
+                self._build_session(
+                    session_id=session_id, channel=channel, thread_ts=None,
+                    slack_client=slack_client, resume_session_id=None,
+                    is_recovery=False,
+                )
+        elif await reopen_session(session_id):
+            logger.info("Reopened done session %d: GlitchTip issue %s regressed",
+                        session_id, issue_key)
+            self._mark_reopened_in_memory(session_id)
+            initial_user_message = (
+                _reopen_cue("the GlitchTip issue fired again after you closed it "
+                            "(a regression)")
+                + "\n\n" + initial_user_message
+            )
+        await self._enqueue(
+            session_id, initial_user_message, slack_client,
+            status_hint="GlitchTip alert received",
+        )
+        return session_id
+
+    # ------------------------------------------------------------------
     # Recovery (called once at startup)
     # ------------------------------------------------------------------
 

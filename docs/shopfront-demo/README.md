@@ -141,3 +141,21 @@ update → proposes "pause update vN" → human approves → bitclaw pauses it �
 fix goes through the coding agent and a PR labelled `release-fix` → merge →
 CI publishes the mandatory update. These values are template variables on
 `bitclaw-orchestrator`.
+
+## GlitchTip alerts → bitclaw (direct webhook)
+
+GlitchTip project `shopfront` (org "Shopfront Demo", app.glitchtip.com, free
+tier) has two alert recipients:
+
+1. the "Shopfront Alerts" Slack app's incoming webhook → `#shopfront-alerts`
+   (for humans; bitclaw is NOT in that channel, and `AUTO_TRIGGER_CHANNELS` is
+   cleared);
+2. `https://bitclaw.ashopfront.com/webhooks/glitchtip/<GLITCHTIP_WEBHOOK_SECRET>`
+   → bitclaw opens ONE incident thread per GlitchTip issue in
+   `GLITCHTIP_ALERT_CHANNEL`, keyed by the issue id. Repeats of the same issue
+   go into that thread (at most one wake-up per 10 min); a repeat after the
+   thread was closed reopens it as a regression.
+
+The alert text reaches the agent fenced as untrusted crash data. The secret
+lives in the URL path (GlitchTip can't sign), so keep the URL private; it is
+stored on the host in `~/bitclaw-data/override.env`.
