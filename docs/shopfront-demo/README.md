@@ -119,3 +119,25 @@ copy its token into `BITCLAW_CLOUDFLARE_TUNNEL_TOKEN`. GitHub webhook on
 `bitrise-shopfront`: `https://bitclaw.<domain>/webhooks/github`, content type
 JSON, the webhook secret above, events: pull requests, PR reviews, PR review
 comments, issue comments, check runs/suites, workflow runs, statuses.
+
+## Release control (Bitrise CI logs + CodePush)
+
+bitclaw also loads the hosted Bitrise MCP (`https://mcp.bitrise.io`, PAT as
+Bearer header, API groups limited to `builds,release-management-code-push`),
+under server key `bitrise`. [`tools/codepush.py`](../../tools/codepush.py)
+enforces in code:
+
+| Tools | Rule |
+|---|---|
+| `list_builds`, `get_build`, `get_build_steps`, `get_build_log` | only `BITRISE_APP_SLUG` (`f198f5c9-…`, Shopfront CI) |
+| `codepush_list_deployments` | only `CODEPUSH_APP_IDS` (iOS `bd299984-…`, Android `1e5daf83-…`) |
+| `codepush_get_deployment`, `codepush_list_updates` | only `CODEPUSH_DEPLOYMENT_IDS` (Staging: iOS `55b32445-…`, Android `6e97ef60-…`) |
+| `codepush_get_update(_status)`, `codepush_patch_update` | only update ids bitclaw itself listed from those deployments |
+| `codepush_patch_update` (pause / resume / rollout), `codepush_rollback_deployment` | **plus a Slack Approve click** for the exact call (same Approve/Reject rail as public GitHub writes) |
+| everything else (trigger/abort builds, create/promote/delete deployments, upload/delete updates) | not allowlisted |
+
+The external loop then reads: Sentry alert → bitclaw finds the latest Staging
+update → proposes "pause update vN" → human approves → bitclaw pauses it →
+fix goes through the coding agent and a PR labelled `release-fix` → merge →
+CI publishes the mandatory update. These values are template variables on
+`bitclaw-orchestrator`.

@@ -203,7 +203,8 @@ class SlackTools:
 
     async def post_approval_request(
         self, *, req_id: str, action_label: str, target_label: str,
-        body_preview: str,
+        body_preview: str, header: str | None = None, fallback: str | None = None,
+        approve_label: str = "Approve & post",
     ) -> str | None:
         """Post a public-repo egress approval prompt with Approve/Reject buttons.
 
@@ -223,7 +224,7 @@ class SlackTools:
         preview = (body_preview or "").strip()
         if len(preview) > _APPROVAL_PREVIEW_MAX:
             preview = preview[:_APPROVAL_PREVIEW_MAX] + "\n…(truncated)"
-        header = (
+        header = header or (
             f":lock: *Approval needed* — I want to {action_label} on "
             f"*{target_label}* (a PUBLIC repo). Approve to publish it, or reject."
         )
@@ -249,13 +250,13 @@ class SlackTools:
             "block_id": f"egress::{req_id}",
             "elements": [
                 {"type": "button", "action_id": "egress_approve", "style": "primary",
-                 "text": {"type": "plain_text", "text": "Approve & post"},
+                 "text": {"type": "plain_text", "text": approve_label},
                  "value": req_id},
                 {"type": "button", "action_id": "egress_reject", "style": "danger",
                  "text": {"type": "plain_text", "text": "Reject"}, "value": req_id},
             ],
         })
-        fallback = (
+        fallback = fallback or (
             f"Approval needed to {action_label} on {target_label} (public repo)."
         )
         try:

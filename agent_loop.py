@@ -40,6 +40,13 @@ from tools.hooks import (
     require_ai_prompt_on_devenv_create,
     require_pinned_template_on_devenv_create,
 )
+from tools.codepush import (
+    BITRISE_ALLOWED_TOOLS,
+    BITRISE_CONTEXT_DENIES,
+    BITRISE_TOOL_MATCHER,
+    make_codepush_gate,
+    record_codepush_updates,
+)
 from tools.slack_tools import SlackTools
 from tools.scheduling import SchedulingTools
 
@@ -143,6 +150,13 @@ Public-repo GitHub writes are HUMAN-GATED — expect a one-time approval step; i
 - You will be resumed with one of two cues: "[bitclaw egress approved: <id>]" — re-issue the EXACT same tool call, unchanged (altering even the wording makes it a different action and gates it again); "[bitclaw egress rejected: <id>]" — do NOT retry that call; ask in this thread what they want changed.
 - Merges ride the same rail: even after a human says "merge it", the actual merge on a public repo surfaces the button as final confirmation of that specific merge. PRIVATE/INTERNAL repos are not gated — writes there go straight through.
 - If a write is blocked because the approval system itself errored (not a normal parked-for-approval deny), say you're blocked on the approval system and stop — don't loop retrying."""
+
+_PROMPT_RELEASE = """\
+Bitrise CI logs and CodePush releases (mcp__bitrise__ tools; scope pinned in code):
+- CI: when a PR check from Bitrise fails, read it with mcp__bitrise__get_build / get_build_steps / get_build_log (app_slug `%%BITRISE_APP_SLUG%%`; the build slug is the last path segment of the status's target URL). Relay the failing step name and the relevant log excerpt VERBATIM to the coding agent — it cannot read CI itself.
+- CodePush deployments you may touch: %%CODEPUSH_DEPLOYMENTS%%. To find an update, call mcp__bitrise__codepush_list_updates on that deployment first (update ids you haven't listed are refused in code).
+- Release changes are human-gated: mcp__bitrise__codepush_patch_update (pause = disabled "true", resume = disabled "false", or lower `rollout`) and mcp__bitrise__codepush_rollback_deployment are held until a human clicks Approve in this thread. A "RELEASE-CHANGE GATE" deny is EXPECTED: post one line that you're waiting, end your turn, and on "[bitclaw egress approved: <id>]" re-issue the EXACT same call; on "rejected" don't retry.
+- When an alert ties a regression to the latest CodePush update: PROPOSE pausing that update (patch disabled "true") as containment, name the update label/version and what users are affected, then start the fix through the normal coding-agent → PR path. You never publish updates yourself; the fix ships when the PR carries the `release-fix` label and merges (CI publishes a mandatory update). Never create, promote, or delete deployments or updates."""
 
 _PROMPT_TMUX = """\
 Talking to the RDE coding agent (over tmux, via mcp__infra__bitrise_devenv_execute):
@@ -413,6 +427,20 @@ def _build_system_prompt(server_names) -> str:
     if has_github:
         parts.append(_PROMPT_PUBLIC_PRIVATE)
         parts.append(_PROMPT_EGRESS)
+
+    if "bitrise" in servers:
+        deps = sorted(
+            d.strip() for d in os.environ.get("CODEPUSH_DEPLOYMENT_IDS", "").split(",")
+            if d.strip()
+        )
+        parts.append(
+            _PROMPT_RELEASE
+            .replace("%%BITRISE_APP_SLUG%%",
+                     os.environ.get("BITRISE_APP_SLUG") or "(not configured)")
+            .replace("%%CODEPUSH_DEPLOYMENTS%%",
+                     ", ".join(f"`{d}`" for d in deps) or
+                     "none (CODEPUSH_DEPLOYMENT_IDS unset — all CodePush calls are denied)")
+        )
 
     if has_infra:
         parts.append(_PROMPT_TMUX)
@@ -705,6 +733,8 @@ class AgentLoop:
         for name in external_mcp_servers:
             if name == "infra":
                 external_allows += [f"mcp__infra__{t}" for t in _INFRA_ALLOWED_TOOLS]
+            elif name == "bitrise":
+                external_allows += [f"mcp__bitrise__{t}" for t in BITRISE_ALLOWED_TOOLS]
             else:
                 external_allows.append(f"mcp__{name}__*")
 
@@ -736,6 +766,7 @@ class AgentLoop:
             disallowed_tools=(
                 _DISALLOWED_BUILTINS
                 + _INFRA_CONTEXT_DENIES
+                + BITRISE_CONTEXT_DENIES
                 + list(FORBIDDEN_GITHUB_TOOLS)
             ),
             # No built-in tools AT ALL (maps to `--tools ""`): the
@@ -805,6 +836,15 @@ class AgentLoop:
                     # forbidden tools are rejected first, so the gate only
                     # ever acts on the kept write tools. Only wired when an
                     # egress_registry is passed.
+                    # Bitrise CI/CodePush: pin every call to the configured
+                    # app/deployments, and hold the two release-changing
+                    # writes for a human Approve click (tools/codepush.py).
+                    HookMatcher(
+                        matcher=BITRISE_TOOL_MATCHER,
+                        hooks=[make_codepush_gate(
+                            session_id, slack_tools, egress_registry,
+                        )],
+                    ),
                     HookMatcher(
                         matcher=GITHUB_TOOL_MATCHER,
                         hooks=[
@@ -827,6 +867,10 @@ class AgentLoop:
                 # RESULT CONTENT, not the tool name, so it survives the
                 # github-mcp-server's read-tool renames.
                 "PostToolUse": [
+                    HookMatcher(
+                        matcher="mcp__bitrise__codepush_(list_updates|get_update)",
+                        hooks=[record_codepush_updates],
+                    ),
                     HookMatcher(
                         matcher=GITHUB_TOOL_MATCHER,
                         hooks=[make_github_trust_filter()],

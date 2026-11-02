@@ -33,7 +33,7 @@ ls -1 "$HOME/bin"
 [ -d "$HOME/bitclaw/.git" ] || git clone --branch "${BITCLAW_BRANCH:-shopfront-demo}" "${BITCLAW_REPO_URL:-https://github.com/naveen-bitrise/bitclaw-public.git}" "$HOME/bitclaw"
 cd "$HOME/bitclaw" && git pull --ff-only
 uv sync --frozen --no-dev
-cp -n .mcp.json.example .mcp.json
+cp .mcp.json.example .mcp.json
 echo "[host:on_create] bitclaw at $(git rev-parse --short HEAD)"
 
 cat > "$HOME/bin/bitclaw-start.sh" <<'START'
@@ -65,6 +65,9 @@ if [ -n "${BITCLAW_SLACK_BOT_TOKEN:-}" ]; then
     echo "GITHUB_ALLOWED_ORG=${GITHUB_ALLOWED_ORG:-}"
     echo "CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-5}"
     echo "AUTO_TRIGGER_CHANNELS=${AUTO_TRIGGER_CHANNELS:-}"
+    echo "BITRISE_APP_SLUG=${BITRISE_APP_SLUG:-}"
+    echo "CODEPUSH_APP_IDS=${CODEPUSH_APP_IDS:-}"
+    echo "CODEPUSH_DEPLOYMENT_IDS=${CODEPUSH_DEPLOYMENT_IDS:-}"
     echo "DB_PATH=$HOME/bitclaw-data/bitclaw.db"
     echo "CLAUDE_CONFIG_DIR=$HOME/bitclaw-data/claude"
     echo "WEBHOOK_PORT=8080"

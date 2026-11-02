@@ -613,7 +613,7 @@ class SlackGateway:
             return {"ok": False, "reason": "not_pending"}
         cue = (
             f"[bitclaw egress approved: {req_id}] A human (<@{approver}>) approved "
-            f"publishing the GitHub write you parked for {req.target}. Re-issue "
+            f"the write you parked for {req.target}. Re-issue "
             "the EXACT same tool call now, unchanged (same body/title/target/"
             "method) — it will go through this time. Do not alter the wording, or "
             "it will be gated again."
@@ -637,7 +637,7 @@ class SlackGateway:
         reason_clause = f" Reason: {reason}" if reason else ""
         cue = (
             f"[bitclaw egress rejected: {req_id}] A human (<@{approver}>) declined "
-            f"the GitHub write you parked for {req.target}.{reason_clause} Do NOT "
+            f"the write you parked for {req.target}.{reason_clause} Do NOT "
             "retry that call. Ask in this thread what they want changed before "
             "drafting a new version."
         )

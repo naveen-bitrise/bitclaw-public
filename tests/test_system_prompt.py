@@ -130,3 +130,12 @@ def test_demo_knobs_set(full_env, monkeypatch):
     assert "warm_pool_id `pool-7`" in p and "tmpl-42" in p
     assert "cd ~/shopfront" in p and "NEVER re-clone" in p
     assert "run npm test and screenshot the simulator" in p
+
+
+def test_release_section_only_with_bitrise_server(full_env, monkeypatch):
+    monkeypatch.setenv("CODEPUSH_DEPLOYMENT_IDS", "dep-1,dep-2")
+    monkeypatch.setenv("BITRISE_APP_SLUG", "slug-9")
+    assert "RELEASE-CHANGE GATE" not in _build_system_prompt(FULL)
+    p = _build_system_prompt(FULL | {"bitrise"})
+    assert "%%" not in p
+    assert "RELEASE-CHANGE GATE" in p and "`dep-1`, `dep-2`" in p and "slug-9" in p

@@ -605,6 +605,13 @@ def _log_capability_summary() -> None:
             "  github          ✗  set GITHUB_TOKEN + GITHUB_ALLOWED_ORG to "
             "open and shepherd PRs"
         )
+    if have("BITRISE_TOKEN", "CODEPUSH_DEPLOYMENT_IDS"):
+        rel = "  release         ✓  Bitrise CI logs + CodePush pause/rollback (human-approved)"
+        if not os.environ.get("BITRISE_APP_SLUG"):
+            rel += " (BITRISE_APP_SLUG unset — CI log reads disabled)"
+        lines.append(rel)
+    else:
+        lines.append("  release         ✗  optional (CODEPUSH_DEPLOYMENT_IDS + BITRISE_APP_SLUG)")
     if have("JIRA_AUTH", "JIRA_HOST"):
         lines.append("  jira            ✓")
     else:

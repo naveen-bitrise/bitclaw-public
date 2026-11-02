@@ -4,7 +4,8 @@
       "command": "github-mcp-server",
       "args": [
         "stdio",
-        "--toolsets", "context,issues,pull_requests,repos,users,actions"
+        "--toolsets",
+        "context,issues,pull_requests,repos,users,actions"
       ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN"
@@ -16,6 +17,14 @@
       "env": {
         "BITRISE_TOKEN": "$BITRISE_TOKEN",
         "BITRISE_WORKSPACE_ID": "$BITRISE_WORKSPACE_ID"
+      }
+    },
+    "bitrise": {
+      "type": "http",
+      "url": "https://mcp.bitrise.io",
+      "headers": {
+        "Authorization": "Bearer $BITRISE_TOKEN",
+        "x-bitrise-enabled-api-groups": "builds,release-management-code-push"
       }
     },
     "atlassian": {
