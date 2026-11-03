@@ -25,7 +25,7 @@ def test_full_config_contains_all_sections(full_env):
     # GitHub rules present, with the org substituted.
     assert "mergeable_state" in p
     assert "acme-org" in p
-    assert "PUBLIC-REPO EGRESS GATE" in p
+    assert "EGRESS GATE" in p
     assert "[thread_root_id=N]" in p
     # RDE rules present, with the pinned template substituted.
     assert "tmpl-42" in p
@@ -77,7 +77,7 @@ def test_github_only_orchestrates_without_coding(monkeypatch):
     monkeypatch.delenv("JIRA_HOST", raising=False)
     p = _build_system_prompt({"github"})
     assert "%%" not in p
-    assert "mergeable_state" in p and "PUBLIC-REPO EGRESS GATE" in p
+    assert "mergeable_state" in p and "EGRESS GATE" in p
     # No RDE machinery in the prompt.
     assert "bitrise_devenv" not in p and "tmux" not in p
     assert "NO coding backend" in p

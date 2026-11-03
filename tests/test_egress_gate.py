@@ -182,3 +182,24 @@ def test_registry_approve_and_reject_lifecycle():
                        summary="s", target="o/r#1")
     assert reg.reject(req2.req_id, "alice", "too spicy") is not None
     assert reg.get(req2.req_id) is None           # removed on reject
+
+
+async def test_gate_all_repos_holds_private_repo_writes(monkeypatch):
+    """EGRESS_GATE_ALL_REPOS=1: a private-repo write is parked for approval too,
+    without a visibility lookup, and the Slack prompt doesn't call it public."""
+    monkeypatch.setenv("EGRESS_GATE_ALL_REPOS", "1")
+    gate, _, slack, vis = make_gate(verdict=False)
+    result = await gate(write_call(), "t1", None)
+    assert decision(result) == "deny"
+    assert "held for HUMAN approval" in deny_reason(result)
+    assert "PUBLIC" not in deny_reason(result)
+    assert vis.calls == []
+    assert len(slack.approvals) == 1
+    assert "PUBLIC" not in slack.approvals[0]["header"]
+
+
+async def test_gate_all_repos_off_keeps_private_writes_ungated(monkeypatch):
+    monkeypatch.setenv("EGRESS_GATE_ALL_REPOS", "0")
+    gate, _, slack, _ = make_gate(verdict=False)
+    assert await gate(write_call(), "t1", None) == {}
+    assert slack.approvals == []

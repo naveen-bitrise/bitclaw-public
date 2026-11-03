@@ -1078,15 +1078,25 @@ def _egress_pre_deny(reason: str) -> dict:
     }
 
 
-def _egress_deny(req_id: str, target: str, action_label: str, *, posted: bool) -> dict:
+def _egress_gate_all_repos() -> bool:
+    """EGRESS_GATE_ALL_REPOS=1 holds GitHub writes for approval on EVERY repo, not
+    only public ones (e.g. a private demo repo where a human should still sign off
+    on PRs, labels and merges). Read per call so it can be flipped without a restart
+    of the gate's owner."""
+    return os.environ.get("EGRESS_GATE_ALL_REPOS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _egress_deny(req_id: str, target: str, action_label: str, *, posted: bool,
+                 gate_all: bool = False) -> dict:
     """Deny reason for a parked-for-approval write. `posted` reflects whether the
     Approve/Reject buttons were actually sent — when False (a Slack failure), the
     agent is told to re-issue to retry posting them rather than to wait for
     buttons that never arrived."""
+    why = ("every GitHub write in this deployment" if gate_all else "a PUBLIC repo")
     if not posted:
         reason = (
-            f"PUBLIC-REPO EGRESS GATE: this would {action_label} on {target} (a "
-            "PUBLIC repo) and is held for human approval, but posting the "
+            f"EGRESS GATE: this would {action_label} on {target} ({why}) "
+            "and is held for human approval, but posting the "
             "Approve/Reject buttons to Slack just FAILED (transient). The write "
             "is blocked. Re-issue this EXACT same call once to retry posting the "
             "approval prompt; if it keeps failing, tell the human in this thread "
@@ -1094,8 +1104,8 @@ def _egress_deny(req_id: str, target: str, action_label: str, *, posted: bool) -
         )
         return _egress_pre_deny(reason)
     reason = (
-        f"PUBLIC-REPO EGRESS GATE: this would {action_label} on {target}, which "
-        "is a PUBLIC repo, so it is held for HUMAN approval before it reaches "
+        f"EGRESS GATE: this would {action_label} on {target} ({why}), "
+        "so it is held for HUMAN approval before it reaches "
         "GitHub. This is a security policy enforced in code — it is NOT an error, "
         "and NOT something to retry, rephrase, or work around. Your proposed "
         f"content has been posted to this Slack thread with Approve / Reject "
@@ -1176,10 +1186,12 @@ def make_public_egress_gate(
             tool_input = input.get("tool_input") or {}
             owner, repo = _egress_extract_owner_repo(tool_input)
 
-            is_public = await check(owner, repo)
-            if is_public is False:
-                # Private/internal repo — internal audience, no gate.
-                return {}
+            gate_all = _egress_gate_all_repos()
+            if not gate_all:
+                is_public = await check(owner, repo)
+                if is_public is False:
+                    # Private/internal repo — internal audience, no gate.
+                    return {}
             # True (public) OR None (unconfirmed → fail closed) → gate.
             target = _egress_target_label(owner, repo, tool_input)
 
@@ -1222,9 +1234,18 @@ def make_public_egress_gate(
                 )
                 ts = None
                 try:
+                    extra = {}
+                    if gate_all:
+                        extra = {
+                            "header": (f":lock: *Approval needed* — I want to "
+                                       f"{action_label} on *{target}*. Approve to go "
+                                       "ahead, or reject."),
+                            "fallback": f"Approval needed to {action_label} on {target}.",
+                            "approve_label": "Approve",
+                        }
                     ts = await slack_tools.post_approval_request(
                         req_id=req.req_id, action_label=action_label,
-                        target_label=target, body_preview=summary,
+                        target_label=target, body_preview=summary, **extra,
                     )
                 except Exception:
                     logger.exception(
@@ -1243,7 +1264,8 @@ def make_public_egress_gate(
                         await slack_tools.set_live_status("awaiting approval")
                     except Exception:
                         logger.debug("egress gate: could not set status", exc_info=True)
-            return _egress_deny(req.req_id, target, action_label, posted=posted)
+            return _egress_deny(req.req_id, target, action_label, posted=posted,
+                                gate_all=gate_all)
         except Exception:
             logger.exception(
                 "egress gate: unexpected error on %s — denying (fail closed) "
