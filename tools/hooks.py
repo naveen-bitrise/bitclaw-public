@@ -203,6 +203,35 @@ _FORBIDDEN_GITHUB_TOOL_SET = frozenset(FORBIDDEN_GITHUB_TOOLS)
 # get_check_runs for merge-readiness + relaying reviews), but deny the
 # code-reading methods — the same "not a coder" line as the standalone reads.
 _GITHUB_PR_READ_TOOL = "mcp__github__pull_request_read"
+
+# issue_write is a broad tool (create/edit any issue or PR: title, body, state,
+# assignees…). bitclaw needs exactly ONE narrow use of it: putting a release
+# label on its PR, which is what makes CI publish a CodePush update. Everything
+# else on the tool is denied; the allowed shape is still held for human approval
+# by the egress gate like any other GitHub write.
+_GITHUB_ISSUE_WRITE_TOOL = "mcp__github__issue_write"
+_ISSUE_WRITE_RELEASE_KEYS = frozenset({"owner", "repo", "method", "issue_number", "labels"})
+
+
+def release_labels() -> frozenset[str]:
+    """Labels bitclaw may set on a PR (RELEASE_LABELS, comma-separated)."""
+    raw = os.environ.get("RELEASE_LABELS", "release-update,release-fix")
+    return frozenset(x.strip() for x in raw.split(",") if x.strip())
+
+
+def is_release_label_write(tool_input) -> bool:
+    """True iff an issue_write call ONLY sets one release label on an issue/PR:
+    method=update, an issue_number, labels=[<one RELEASE_LABELS entry>], and no
+    other field set (empty/None values are ignored, since clients send defaults)."""
+    ti = tool_input or {}
+    if ti.get("method") != "update" or not ti.get("issue_number"):
+        return False
+    for key, value in ti.items():
+        if key not in _ISSUE_WRITE_RELEASE_KEYS and value not in (None, "", [], {}):
+            return False
+    labels = ti.get("labels")
+    return (isinstance(labels, list) and len(labels) == 1
+            and isinstance(labels[0], str) and labels[0] in release_labels())
 _GITHUB_PR_READ_CODE_METHODS = frozenset({"get_diff", "get_files", "get_commits"})
 
 _GITHUB_MUTATION_DENY_REASON = (
@@ -532,6 +561,13 @@ async def deny_github_write_tools(input, tool_use_id, context):
         reason = _GITHUB_NON_ORCHESTRATION_WRITE_DENY_REASON
     elif tool_name == _GITHUB_PR_READ_TOOL and _is_pr_read_code_method(input.get("tool_input")):
         reason = _GITHUB_CODE_READ_DENY_REASON
+    elif tool_name == _GITHUB_ISSUE_WRITE_TOOL and not is_release_label_write(input.get("tool_input")):
+        reason = (
+            _GITHUB_NON_ORCHESTRATION_WRITE_DENY_REASON
+            + " The ONE allowed use of mcp__github__issue_write is setting a release "
+            "label on your PR: method \"update\", issue_number = the PR number, "
+            f"labels = exactly one of {sorted(release_labels())}, and no other field."
+        )
     else:
         return {}
 
@@ -948,6 +984,8 @@ _GITHUB_APPROVABLE_WRITES = frozenset({
     "mcp__github__update_pull_request",
     "mcp__github__merge_pull_request",
     "mcp__github__fork_repository",
+    # Only ever the release-label shape (deny_github_write_tools refuses the rest).
+    "mcp__github__issue_write",
 })
 
 # Read-only GitHub tools that NEVER egress (they only pull data in — already
@@ -999,6 +1037,7 @@ _GITHUB_EGRESS_ACTION_LABELS = {
     "mcp__github__update_pull_request": "update the pull request",
     "mcp__github__merge_pull_request": "MERGE the pull request",
     "mcp__github__fork_repository": "fork the repository",
+    "mcp__github__issue_write": "set the release label",
 }
 
 # Free-text fields whose presence we surface (labelled) in the human-readable
@@ -1061,6 +1100,9 @@ def _egress_summary(tool_name: str, tool_input: dict) -> str:
         val = tool_input.get(key)
         if isinstance(val, str) and val.strip():
             parts.append(f"{label}: {val.strip()}")
+    labels = tool_input.get("labels")
+    if isinstance(labels, list) and labels:
+        parts.append("labels: " + ", ".join(str(x) for x in labels))
     return "\n".join(parts)
 
 

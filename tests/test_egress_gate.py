@@ -203,3 +203,14 @@ async def test_gate_all_repos_off_keeps_private_writes_ungated(monkeypatch):
     gate, _, slack, _ = make_gate(verdict=False)
     assert await gate(write_call(), "t1", None) == {}
     assert slack.approvals == []
+
+
+async def test_release_label_write_is_held_for_approval_with_label_preview(monkeypatch):
+    monkeypatch.setenv("EGRESS_GATE_ALL_REPOS", "1")
+    gate, _, slack, _ = make_gate(verdict=False)
+    call = hook_input("mcp__github__issue_write", {"owner": "o", "repo": "r", "method": "update",
+                                                   "issue_number": 9, "labels": ["release-fix"]})
+    result = await gate(call, "t1", None)
+    assert decision(result) == "deny"
+    assert slack.approvals[0]["action_label"] == "set the release label"
+    assert "labels: release-fix" in slack.approvals[0]["body_preview"]

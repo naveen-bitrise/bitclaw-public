@@ -249,3 +249,37 @@ async def test_saved_input_mapping_respects_explicit_flag(explicit):
 async def test_saved_input_mapping_ignores_other_tools():
     other = hook_input("mcp__infra__bitrise_devenv_get", {})
     assert await hooks.inject_saved_input_mapping_on_devenv_create(other, "t1", None) == {}
+
+
+# ---------------------------------------------------------------------------
+# issue_write: only the release-label shape is allowed
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("label", ["release-fix", "release-update"])
+async def test_issue_write_release_label_allowed(label):
+    result = await hooks.deny_github_write_tools(hook_input("mcp__github__issue_write", {
+        "owner": "o", "repo": "r", "method": "update", "issue_number": 12, "labels": [label],
+        "title": "", "body": None}), "t1", None)
+    assert result == {}
+
+
+@pytest.mark.parametrize("tool_input", [
+    {"method": "update", "issue_number": 12, "labels": ["release-fix"], "title": "pwned"},
+    {"method": "update", "issue_number": 12, "labels": ["release-fix", "release-update"]},
+    {"method": "update", "issue_number": 12, "labels": ["bug"]},
+    {"method": "create", "labels": ["release-fix"], "title": "x"},
+    {"method": "update", "issue_number": 12, "state": "closed"},
+    {"method": "update", "labels": ["release-fix"]},
+])
+async def test_issue_write_other_shapes_denied(tool_input):
+    result = await hooks.deny_github_write_tools(
+        hook_input("mcp__github__issue_write", {"owner": "o", "repo": "r", **tool_input}), "t1", None)
+    assert decision(result) == "deny"
+    assert "release label" in deny_reason(result)
+
+
+async def test_release_labels_env_override(monkeypatch):
+    monkeypatch.setenv("RELEASE_LABELS", "ship-it")
+    ok = await hooks.deny_github_write_tools(hook_input("mcp__github__issue_write", {
+        "owner": "o", "repo": "r", "method": "update", "issue_number": 1, "labels": ["ship-it"]}), "t1", None)
+    assert ok == {}
