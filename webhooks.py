@@ -585,8 +585,13 @@ def _format_glitchtip_alert(issue: dict, repeat: bool) -> str:
             "per your release-control rules — check whether the latest CodePush "
             "update on the pinned deployments matches the failing release and, "
             "if so, PROPOSE pausing it — and start the fix through the coding "
-            "agent and a PR labelled release-fix. Ask in the thread before "
-            "starting a coding session if the cause is unclear."
+            "agent and a PR labelled release-fix. Don't wait for a stack trace: "
+            "release builds report minified frames, and the coding agent can find "
+            "the failing code from the error text itself (search the source, "
+            "reproduce it on the simulator). Start the coding session right away "
+            "with the alert's error text, release and screen tag in the brief. Ask "
+            "in the thread first only if the alert isn't from this app or is from "
+            "a development/test environment."
         )
     return "\n".join(lines)
 
