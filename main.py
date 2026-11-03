@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)  # .env is the source of truth; ignore stale vars inherited from tmux
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
