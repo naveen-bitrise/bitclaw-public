@@ -586,14 +586,17 @@ def _summarize_glitchtip_event(event: dict) -> list[str]:
         if not isinstance(values, list):
             continue
         if entry.get("type") == "exception" and values:
-            exc = values[-1] if isinstance(values[-1], dict) else {}
-            lines.append(f"Exception: {_trunc(str(exc.get('type') or ''), 80)}: {_trunc(str(exc.get('value') or ''), 300)}")
-            frames = ((exc.get("stacktrace") or {}).get("frames") or [])
-            frames = [f for f in frames if isinstance(f, dict)]
-            for f in list(reversed(frames))[:6]:  # innermost first
-                where = f.get("filename") or f.get("absPath") or f.get("abs_path") or f.get("module") or "?"
-                line = f.get("lineNo") or f.get("lineno") or ""
-                lines.append(f"  at {_trunc(str(f.get('function') or '?'), 80)} ({_trunc(str(where), 120)}:{line})")
+            # A render error caught by Sentry's ErrorBoundary arrives as a chain:
+            # the boundary's error (component stack: which provider/screen) and
+            # the original error (JS stack: which function). Show both.
+            for exc in [v for v in reversed(values) if isinstance(v, dict)][:2]:
+                lines.append(f"Exception: {_trunc(str(exc.get('type') or ''), 80)}: {_trunc(str(exc.get('value') or ''), 300)}")
+                frames = ((exc.get("stacktrace") or {}).get("frames") or [])
+                frames = [f for f in frames if isinstance(f, dict)]
+                for f in list(reversed(frames))[:5]:  # innermost first
+                    where = f.get("filename") or f.get("absPath") or f.get("abs_path") or f.get("module") or "?"
+                    line = f.get("lineNo") or f.get("lineno") or ""
+                    lines.append(f"  at {_trunc(str(f.get('function') or '?'), 80)} ({_trunc(str(where), 120)}:{line})")
         elif entry.get("type") == "breadcrumbs" and values:
             crumbs = [b for b in values if isinstance(b, dict)][-8:]
             if crumbs:
