@@ -574,7 +574,8 @@ def _summarize_glitchtip_event(event: dict) -> list[str]:
     influence, so it stays inside the untrusted <<<alert block.
     """
     lines: list[str] = []
-    tags = _tag_list(event.get("tags"))
+    # user.* tags identify the person/device: not needed for triage, kept out.
+    tags = [(k, v) for k, v in _tag_list(event.get("tags")) if not k.startswith("user")]
     if tags:
         lines.append("Event tags: " + ", ".join(f"{_trunc(k, 40)}={_trunc(v, 80)}" for k, v in tags[:20]))
     for entry in event.get("entries") or []:
