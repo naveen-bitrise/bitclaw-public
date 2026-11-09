@@ -105,6 +105,64 @@ async def test_distinct_issues_get_distinct_sessions(gt):
     assert [s[0] for s in gw.starts] == ["1", "2"]
 
 
+SAMPLE_EVENT = {
+    "tags": [{"key": "codepush", "value": "none"}, {"key": "platform", "value": "ios"},
+             {"key": "screen", "value": "ProductDetail"}],
+    "entries": [
+        {"type": "exception", "data": {"values": [{
+            "type": "TypeError", "value": "Cannot read property 'price' of undefined",
+            "stacktrace": {"frames": [
+                {"function": "reduce", "filename": "app:///index.bundle", "lineNo": 1},
+                {"function": "unitPrice", "filename": "app:///index.bundle", "lineNo": 2},
+            ]},
+        }]}},
+        {"type": "breadcrumbs", "data": {"values": [
+            {"category": "touch", "message": "Add to cart"},
+        ]}},
+    ],
+}
+
+
+def test_summarize_event_has_tags_exception_frames_and_breadcrumbs():
+    from webhooks import _summarize_glitchtip_event
+    text = "\n".join(_summarize_glitchtip_event(SAMPLE_EVENT))
+    assert "codepush=none" in text and "platform=ios" in text
+    assert "Exception: TypeError: Cannot read property 'price' of undefined" in text
+    # innermost frame first
+    assert text.index("unitPrice") < text.index("reduce")
+    assert "[touch] Add to cart" in text
+
+
+def test_summarize_event_tolerates_junk():
+    from webhooks import _summarize_glitchtip_event
+    assert _summarize_glitchtip_event({"tags": "x", "entries": [None, {"type": "exception"}]}) == []
+
+
+async def test_fetch_is_off_without_token_or_for_foreign_link(monkeypatch):
+    from webhooks import _fetch_glitchtip_event
+    issue = {"key": "123", "link": "https://app.glitchtip.com/shopfront-demo/issues/123"}
+    monkeypatch.delenv("GLITCHTIP_API_TOKEN", raising=False)
+    assert await _fetch_glitchtip_event(issue) == []
+    monkeypatch.setenv("GLITCHTIP_API_TOKEN", "t")
+    assert await _fetch_glitchtip_event({"key": "123", "link": "https://evil.example/issues/123"}) == []
+    assert await _fetch_glitchtip_event({"key": "title:x", "link": issue["link"]}) == []
+
+
+async def test_alert_includes_event_details_when_fetched(gt, monkeypatch):
+    import webhooks
+
+    async def fake_fetch(issue):
+        return webhooks._summarize_glitchtip_event(SAMPLE_EVENT)
+
+    monkeypatch.setattr(webhooks, "_fetch_glitchtip_event", fake_fetch)
+    client, gw = gt
+    await post(client, alert())
+    msg = gw.starts[0][2]
+    # inside the untrusted block, before its end marker
+    assert msg.index("codepush=none") < msg.index("alert>>>")
+    assert "Propose pausing an update ONLY if that tag matches" in msg
+
+
 def test_extract_falls_back_to_text_without_attachments():
     issues = _glitchtip_extract({"text": "Crash in checkout"})
     assert issues[0]["key"] == "title:Crash in checkout"
